@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from app.models.models import User, Product, Category, Order, OrderItem
-from app.schemas.schemas import UserCreate, ProductCreate, CategoryCreate, OrderCreate
+from app.models.models import User, Product, Category, Order, OrderItem, Cart, CartItem
+from app.schemas.schemas import UserCreate, ProductCreate, CategoryCreate, OrderCreate, CartItemCreate
 from app.core.security import get_password_hash
 
 def get_user(db: Session, user_id: int):
@@ -17,8 +17,25 @@ def create_user(db: Session, user: UserCreate):
     db.refresh(db_user)
     return db_user
 
-def get_products(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(Product).filter(Product.is_active == True).offset(skip).limit(limit).all()
+def get_products(db: Session, skip: int = 0, limit: int = 100, category_id: int = None, min_price: float = None, max_price: float = None, search: str = None):
+    query = db.query(Product).filter(Product.is_active == True)
+    
+    if category_id:
+        query = query.filter(Product.category_id == category_id)
+    
+    if min_price is not None:
+        query = query.filter(Product.price >= min_price)
+    
+    if max_price is not None:
+        query = query.filter(Product.price <= max_price)
+    
+    if search:
+        query = query.filter(
+            Product.name.ilike(f"%{search}%") | 
+            Product.description.ilike(f"%{search}%")
+        )
+    
+    return query.offset(skip).limit(limit).all()
 
 def get_product(db: Session, product_id: int):
     return db.query(Product).filter(Product.id == product_id, Product.is_active == True).first()
@@ -70,3 +87,64 @@ def create_order(db: Session, order: OrderCreate, user_id: int):
 
 def get_user_orders(db: Session, user_id: int):
     return db.query(Order).filter(Order.user_id == user_id).all()
+
+def get_or_create_cart(db: Session, user_id: int):
+    cart = db.query(Cart).filter(Cart.user_id == user_id).first()
+    if not cart:
+        cart = Cart(user_id=user_id)
+        db.add(cart)
+        db.commit()
+        db.refresh(cart)
+    return cart
+
+def add_to_cart(db: Session, user_id: int, item: CartItemCreate):
+    cart = get_or_create_cart(db, user_id)
+    
+    existing_item = db.query(CartItem).filter(
+        CartItem.cart_id == cart.id,
+        CartItem.product_id == item.product_id
+    ).first()
+    
+    if existing_item:
+        existing_item.quantity += item.quantity
+    else:
+        cart_item = CartItem(
+            cart_id=cart.id,
+            product_id=item.product_id,
+            quantity=item.quantity
+        )
+        db.add(cart_item)
+    
+    db.commit()
+    return get_cart_with_total(db, user_id)
+
+def get_cart_with_total(db: Session, user_id: int):
+    cart = get_or_create_cart(db, user_id)
+    cart_items = db.query(CartItem).filter(CartItem.cart_id == cart.id).all()
+    
+    total = 0
+    for item in cart_items:
+        product = get_product(db, item.product_id)
+        if product:
+            total += product.price * item.quantity
+    
+    return {"cart": cart, "items": cart_items, "total": total}
+
+def remove_from_cart(db: Session, user_id: int, product_id: int):
+    cart = get_or_create_cart(db, user_id)
+    item = db.query(CartItem).filter(
+        CartItem.cart_id == cart.id,
+        CartItem.product_id == product_id
+    ).first()
+    
+    if item:
+        db.delete(item)
+        db.commit()
+    
+    return get_cart_with_total(db, user_id)
+
+def clear_cart(db: Session, user_id: int):
+    cart = get_or_create_cart(db, user_id)
+    db.query(CartItem).filter(CartItem.cart_id == cart.id).delete()
+    db.commit()
+    return cart

@@ -88,3 +88,26 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     email: Optional[str] = None
+
+class CartItemBase(BaseModel):
+    product_id: int
+    quantity: int
+
+class CartItemCreate(CartItemBase):
+    pass
+
+class CartItem(CartItemBase):
+    id: int
+    product: Optional[Product] = None
+    
+    class Config:
+        from_attributes = True
+
+class Cart(BaseModel):
+    id: int
+    user_id: int
+    items: List[CartItem] = []
+    total: float = 0
+    
+    class Config:
+        from_attributes = True

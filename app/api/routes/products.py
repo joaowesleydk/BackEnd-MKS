@@ -8,8 +8,16 @@ from app.schemas.schemas import Product, ProductCreate, Category, CategoryCreate
 router = APIRouter()
 
 @router.get("/", response_model=List[Product])
-def read_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    products = get_products(db, skip=skip, limit=limit)
+def read_products(
+    skip: int = 0, 
+    limit: int = 100, 
+    category_id: int = None,
+    min_price: float = None,
+    max_price: float = None,
+    search: str = None,
+    db: Session = Depends(get_db)
+):
+    products = get_products(db, skip=skip, limit=limit, category_id=category_id, min_price=min_price, max_price=max_price, search=search)
     return products
 
 @router.get("/{product_id}", response_model=Product)

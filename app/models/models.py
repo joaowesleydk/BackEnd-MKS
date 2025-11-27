@@ -14,6 +14,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     orders = relationship("Order", back_populates="user")
+    cart = relationship("Cart", back_populates="user", uselist=False)
 
 class Category(Base):
     __tablename__ = "categories"
@@ -39,6 +40,7 @@ class Product(Base):
     
     category = relationship("Category", back_populates="products")
     order_items = relationship("OrderItem", back_populates="product")
+    cart_items = relationship("CartItem", back_populates="product")
 
 class Order(Base):
     __tablename__ = "orders"
@@ -51,6 +53,27 @@ class Order(Base):
     
     user = relationship("User", back_populates="orders")
     items = relationship("OrderItem", back_populates="order")
+
+class Cart(Base):
+    __tablename__ = "carts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    user = relationship("User", back_populates="cart")
+    items = relationship("CartItem", back_populates="cart")
+
+class CartItem(Base):
+    __tablename__ = "cart_items"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    cart_id = Column(Integer, ForeignKey("carts.id"))
+    product_id = Column(Integer, ForeignKey("products.id"))
+    quantity = Column(Integer)
+    
+    cart = relationship("Cart", back_populates="items")
+    product = relationship("Product", back_populates="cart_items")
 
 class OrderItem(Base):
     __tablename__ = "order_items"
