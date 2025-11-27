@@ -2,7 +2,7 @@ services:
   - type: web
     name: mks-store-backend
     env: python
-    buildCommand: pip install --upgrade pip && pip install --only-binary=:all: --find-links https://download.pytorch.org/whl/cpu -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
