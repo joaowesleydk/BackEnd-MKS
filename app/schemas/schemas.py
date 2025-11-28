@@ -11,6 +11,7 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     id: int
+    role: str
     is_active: bool
     created_at: datetime
     

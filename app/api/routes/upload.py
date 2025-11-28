@@ -1,37 +1,69 @@
 import os
+import cloudinary
+import cloudinary.uploader
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
-from app.core.database import get_db
-from app.api.routes.auth import get_current_user
+from app.api.routes.auth import get_admin_user
 from app.schemas.schemas import User
 
 router = APIRouter()
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# Configuração Cloudinary
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET")
+)
 
 @router.post("/image")
 async def upload_image(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user)
+    admin_user: User = Depends(get_admin_user)
 ):
+    # Validações de segurança
     if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="File must be an image")
+        raise HTTPException(status_code=400, detail="Arquivo deve ser uma imagem")
     
-    file_extension = file.filename.split(".")[-1]
-    file_name = f"{file.filename.split('.')[0]}_{hash(file.filename)}.{file_extension}"
-    file_path = os.path.join(UPLOAD_DIR, file_name)
+    if file.size > 5_000_000:  # 5MB máximo
+        raise HTTPException(status_code=400, detail="Arquivo muito grande (máximo 5MB)")
     
-    with open(file_path, "wb") as buffer:
-        content = await file.read()
-        buffer.write(content)
+    allowed_extensions = ["jpg", "jpeg", "png", "webp"]
+    file_extension = file.filename.split(".")[-1].lower()
+    if file_extension not in allowed_extensions:
+        raise HTTPException(status_code=400, detail="Formato não permitido. Use: jpg, png, webp")
     
-    return {"filename": file_name, "url": f"/api/upload/image/{file_name}"}
+    try:
+        # Lê o arquivo
+        contents = await file.read()
+        
+        # Upload para Cloudinary
+        result = cloudinary.uploader.upload(
+            contents,
+            folder="mks-store/products",
+            resource_type="image",
+            transformation=[
+                {"width": 800, "height": 800, "crop": "limit"},
+                {"quality": "auto"},
+                {"format": "auto"}
+            ]
+        )
+        
+        return {
+            "url": result["secure_url"],
+            "public_id": result["public_id"],
+            "width": result["width"],
+            "height": result["height"]
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro no upload: {str(e)}")
 
-@router.get("/image/{filename}")
-async def get_image(filename: str):
-    file_path = os.path.join(UPLOAD_DIR, filename)
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Image not found")
-    return FileResponse(file_path)
+@router.delete("/image/{public_id}")
+async def delete_image(
+    public_id: str,
+    admin_user: User = Depends(get_admin_user)
+):
+    try:
+        result = cloudinary.uploader.destroy(public_id)
+        return {"message": "Imagem deletada com sucesso", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao deletar: {str(e)}")
