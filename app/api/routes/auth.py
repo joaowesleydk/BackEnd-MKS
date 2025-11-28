@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.core.security import verify_password, create_access_token
 from app.crud.crud import get_user_by_email
-from app.schemas.schemas import Token, User
+from app.schemas.schemas import Token, User, UserCreate
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
