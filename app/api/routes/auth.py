@@ -64,3 +64,39 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 @router.get("/me", response_model=User)
 def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+@router.post("/register-admin")
+def register_admin(user: UserCreate, db: Session = Depends(get_db)):
+    """Registra admin (máximo 2 admins permitidos)"""
+    from app.models.models import User as UserModel
+    from app.core.security import get_password_hash
+    
+    # Conta quantos admins já existem
+    admin_count = db.query(UserModel).filter(UserModel.role == "admin").count()
+    if admin_count >= 2:
+        raise HTTPException(status_code=400, detail="Máximo de 2 admins permitidos no sistema")
+    
+    # Verifica se email já existe
+    existing_user = db.query(UserModel).filter(UserModel.email == user.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email já cadastrado")
+    
+    # Cria usuário admin
+    hashed_password = get_password_hash(user.password)
+    db_user = UserModel(
+        email=user.email,
+        name=user.name,
+        hashed_password=hashed_password,
+        role="admin"  # Já cria como admin
+    )
+    
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    
+    admin_number = admin_count + 1
+    return {
+        "message": f"Admin {admin_number}/2 criado: {db_user.email}", 
+        "user_id": db_user.id,
+        "admins_restantes": 2 - admin_number
+    }
