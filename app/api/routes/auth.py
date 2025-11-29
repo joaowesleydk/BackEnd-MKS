@@ -39,20 +39,22 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     return user
 
-def get_admin_user(current_user: User = Depends(get_current_user)):
-    # Verifica se o usuário tem role de admin
-    if hasattr(current_user, 'role') and current_user.role == "admin":
-        return current_user
-    
-    # Se não tem o campo role, permite (compatibilidade)
-    if not hasattr(current_user, 'role'):
-        return current_user
+def get_admin_user(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        # Verifica role diretamente no banco
+        result = db.execute(text("SELECT role FROM users WHERE id = :user_id"), {"user_id": current_user.id})
+        user_role = result.scalar()
         
-    # Se tem role mas não é admin, bloqueia
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Acesso negado. Apenas admins podem realizar esta ação."
-    )
+        if user_role == "admin":
+            return current_user
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado. Apenas admins podem realizar esta ação."
+            )
+    except Exception:
+        # Se der erro (coluna não existe), permite acesso (compatibilidade)
+        return current_user
 
 @router.post("/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -73,28 +75,39 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
-@router.post("/simple-register")
-def simple_register(email: str, name: str, password: str, db: Session = Depends(get_db)):
-    """Registro simples de usuário"""
+@router.post("/register-user")
+def register_user(email: str, name: str, password: str, db: Session = Depends(get_db)):
+    """Registra usuário normal"""
     try:
-        from app.crud.crud import create_user, get_user_by_email
-        from app.schemas.schemas import UserCreate
+        from app.core.security import get_password_hash
         
-        # Verifica se já existe
-        if get_user_by_email(db, email):
+        # Verifica se email existe
+        existing = db.execute(text("SELECT id FROM users WHERE email = :email"), {"email": email})
+        if existing.fetchone():
             return {"error": "Email já cadastrado"}
         
-        # Cria usuário
-        user_data = UserCreate(email=email, name=name, password=password)
-        new_user = create_user(db, user_data)
+        # Cria usuário normal
+        hashed_pw = get_password_hash(password)
+        
+        db.execute(text("""
+            INSERT INTO users (email, name, hashed_password, role, is_active, created_at)
+            VALUES (:email, :name, :password, 'user', true, NOW())
+        """), {
+            "email": email,
+            "name": name, 
+            "password": hashed_pw
+        })
+        
+        db.commit()
         
         return {
             "success": True,
             "message": f"Usuário criado: {email}",
-            "user_id": new_user.id
+            "role": "user"
         }
         
     except Exception as e:
+        db.rollback()
         return {"error": f"Erro: {str(e)}"}
 
 @router.post("/setup-database")
@@ -131,32 +144,47 @@ def setup_database(db: Session = Depends(get_db)):
         db.rollback()
         return {"error": f"Erro na configuração: {str(e)}"}
 
-@router.post("/create-first-admin")
-def create_first_admin(
+@router.post("/create-admin-complete")
+def create_admin_complete(
     email: str,
     name: str, 
     password: str,
     db: Session = Depends(get_db)
 ):
-    """Cria o primeiro admin (apenas se não existir nenhum)"""
+    """Configura banco E cria admin em uma só operação"""
     try:
-        from app.models.models import User as UserModel
         from app.core.security import get_password_hash
         
-        # Verifica se já existe admin
-        admin_count = db.execute(text("SELECT COUNT(*) FROM users WHERE role = 'admin'")).scalar()
-        if admin_count > 0:
-            return {"error": "Já existe um admin no sistema"}
+        # PASSO 1: Verifica/Cria coluna role
+        try:
+            # Tenta verificar se coluna existe
+            result = db.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='users' AND column_name='role'
+            """))
+            
+            if not result.fetchone():
+                # Adiciona coluna se não existir
+                db.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR DEFAULT 'user'"))
+                db.execute(text("UPDATE users SET role = 'user' WHERE role IS NULL"))
+                db.commit()
+        except Exception as setup_error:
+            return {"error": f"Erro na configuração do banco: {str(setup_error)}"}
         
-        # Verifica se email existe
-        existing = db.query(UserModel).filter(UserModel.email == email).first()
-        if existing:
+        # PASSO 2: Verifica se email já existe
+        existing_check = db.execute(text("SELECT id FROM users WHERE email = :email"), {"email": email})
+        if existing_check.fetchone():
             return {"error": "Email já cadastrado"}
         
-        # Cria primeiro admin
+        # PASSO 3: Verifica quantos admins existem
+        admin_count = db.execute(text("SELECT COUNT(*) FROM users WHERE role = 'admin'")).scalar()
+        if admin_count >= 2:
+            return {"error": "Máximo de 2 admins permitidos"}
+        
+        # PASSO 4: Cria admin
         hashed_pw = get_password_hash(password)
         
-        # Insere diretamente com SQL para garantir que funcione
         db.execute(text("""
             INSERT INTO users (email, name, hashed_password, role, is_active, created_at)
             VALUES (:email, :name, :password, 'admin', true, NOW())
@@ -168,10 +196,11 @@ def create_first_admin(
         
         db.commit()
         
+        admin_number = admin_count + 1
         return {
             "success": True,
-            "message": f"Primeiro admin criado: {email}",
-            "note": "Agora faça login para gerenciar produtos"
+            "message": f"Admin {admin_number}/2 criado: {email}",
+            "note": "Banco configurado e admin criado! Faça login agora."
         }
         
     except Exception as e:
