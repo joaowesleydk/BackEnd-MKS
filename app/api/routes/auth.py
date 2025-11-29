@@ -65,38 +65,70 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
-@router.post("/register-admin")
-def register_admin(user: UserCreate, db: Session = Depends(get_db)):
-    """Registra admin (máximo 2 admins permitidos)"""
-    from app.models.models import User as UserModel
-    from app.core.security import get_password_hash
-    
-    # Conta quantos admins já existem
-    admin_count = db.query(UserModel).filter(UserModel.role == "admin").count()
-    if admin_count >= 2:
-        raise HTTPException(status_code=400, detail="Máximo de 2 admins permitidos no sistema")
-    
-    # Verifica se email já existe
-    existing_user = db.query(UserModel).filter(UserModel.email == user.email).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email já cadastrado")
-    
-    # Cria usuário admin
-    hashed_password = get_password_hash(user.password)
-    db_user = UserModel(
-        email=user.email,
-        name=user.name,
-        hashed_password=hashed_password,
-        role="admin"  # Já cria como admin
-    )
-    
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    
-    admin_number = admin_count + 1
-    return {
-        "message": f"Admin {admin_number}/2 criado: {db_user.email}", 
-        "user_id": db_user.id,
-        "admins_restantes": 2 - admin_number
-    }
+@router.post("/simple-register")
+def simple_register(email: str, name: str, password: str, db: Session = Depends(get_db)):
+    """Registro simples de usuário"""
+    try:
+        from app.crud.crud import create_user, get_user_by_email
+        from app.schemas.schemas import UserCreate
+        
+        # Verifica se já existe
+        if get_user_by_email(db, email):
+            return {"error": "Email já cadastrado"}
+        
+        # Cria usuário
+        user_data = UserCreate(email=email, name=name, password=password)
+        new_user = create_user(db, user_data)
+        
+        return {
+            "success": True,
+            "message": f"Usuário criado: {email}",
+            "user_id": new_user.id
+        }
+        
+    except Exception as e:
+        return {"error": f"Erro: {str(e)}"}
+
+@router.post("/create-admin")
+def create_admin(
+    email: str,
+    name: str, 
+    password: str,
+    db: Session = Depends(get_db)
+):
+    """Cria admin (máximo 2 permitidos)"""
+    try:
+        from app.models.models import User as UserModel
+        from app.core.security import get_password_hash
+        
+        # Conta admins existentes
+        admin_count = db.query(UserModel).filter(UserModel.role == "admin").count()
+        if admin_count >= 2:
+            return {"error": "Máximo de 2 admins permitidos"}
+        
+        # Verifica se email existe
+        existing = db.query(UserModel).filter(UserModel.email == email).first()
+        if existing:
+            return {"error": "Email já cadastrado"}
+        
+        # Cria admin
+        hashed_pw = get_password_hash(password)
+        new_admin = UserModel(
+            email=email,
+            name=name,
+            hashed_password=hashed_pw,
+            role="admin"
+        )
+        
+        db.add(new_admin)
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Admin criado: {email}",
+            "admin_number": admin_count + 1
+        }
+        
+    except Exception as e:
+        db.rollback()
+        return {"error": f"Erro interno: {str(e)}"}
