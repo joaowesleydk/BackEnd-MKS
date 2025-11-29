@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 import jwt
 from jwt.exceptions import InvalidTokenError
+import os
 from app.core.database import get_db
 from app.core.config import settings
 from app.core.security import verify_password, create_access_token
@@ -109,6 +110,80 @@ def register_user(email: str, name: str, password: str, db: Session = Depends(ge
     except Exception as e:
         db.rollback()
         return {"error": f"Erro: {str(e)}"}
+
+@router.post("/google-login")
+def google_login(google_token: str, db: Session = Depends(get_db)):
+    """Login/Cadastro com Google"""
+    try:
+        import requests
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token
+        
+        # Verifica token do Google
+        try:
+            # Valida o token com Google
+            idinfo = id_token.verify_oauth2_token(
+                google_token, 
+                google_requests.Request(),
+                os.getenv("GOOGLE_CLIENT_ID")
+            )
+            
+            email = idinfo['email']
+            name = idinfo['name']
+            
+        except ValueError:
+            return {"error": "Token do Google inválido"}
+        
+        # Verifica se usuário já existe
+        existing = db.execute(text("SELECT id, email, name, role FROM users WHERE email = :email"), {"email": email})
+        user_data = existing.fetchone()
+        
+        if user_data:
+            # Usuário existe - faz login
+            user_id, user_email, user_name, user_role = user_data
+        else:
+            # Usuário não existe - cria conta
+            db.execute(text("""
+                INSERT INTO users (email, name, hashed_password, role, is_active, created_at)
+                VALUES (:email, :name, 'google_auth', 'user', true, NOW())
+            """), {
+                "email": email,
+                "name": name
+            })
+            db.commit()
+            
+            # Busca o usuário recém criado
+            new_user = db.execute(text("SELECT id, email, name, role FROM users WHERE email = :email"), {"email": email})
+            user_id, user_email, user_name, user_role = new_user.fetchone()
+        
+        # Cria token JWT
+        access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+        access_token = create_access_token(
+            data={"sub": email}, expires_delta=access_token_expires
+        )
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user_id,
+                "email": user_email,
+                "name": user_name,
+                "role": user_role
+            }
+        }
+        
+    except Exception as e:
+        db.rollback()
+        return {"error": f"Erro no login Google: {str(e)}"}
+
+@router.get("/google-config")
+def get_google_config():
+    """Retorna configuração do Google OAuth para o frontend"""
+    return {
+        "client_id": os.getenv("GOOGLE_CLIENT_ID", "sua-google-client-id"),
+        "redirect_uri": os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:3000")
+    }
 
 @router.post("/setup-database")
 def setup_database(db: Session = Depends(get_db)):
