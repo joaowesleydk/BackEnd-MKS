@@ -8,8 +8,116 @@ from app.api.routes.auth import get_admin_user
 
 router = APIRouter()
 
+# ============================================================================
+# ENDPOINTS PARA FRONTEND (formato específico)
+# ============================================================================
+
+@router.get("/frontend")
+def get_products_frontend(
+    skip: int = 0, 
+    limit: int = 100, 
+    category_id: int = None,
+    db: Session = Depends(get_db)
+):
+    """Retorna produtos no formato para o frontend"""
+    products = get_products(db, skip=skip, limit=limit, category_id=category_id)
+    
+    return [
+        {
+            "nome": product.name,
+            "preco": f"R$ {product.price:.2f}".replace(".", ","),
+            "imagem": product.image_url or "https://via.placeholder.com/300x300?text=Sem+Imagem",
+            "categoria": product.category.name.lower() if product.category else "sem-categoria"
+        }
+        for product in products
+    ]
+
+@router.get("/categoria/{categoria_nome}")
+def get_products_by_category(categoria_nome: str, db: Session = Depends(get_db)):
+    """Busca produtos por categoria (formato frontend)"""
+    from app.models.models import Category
+    
+    category = db.query(Category).filter(Category.name.ilike(f"%{categoria_nome}%")).first()
+    if not category:
+        return []
+    
+    products = get_products(db, category_id=category.id)
+    
+    return [
+        {
+            "nome": product.name,
+            "preco": f"R$ {product.price:.2f}".replace(".", ","),
+            "imagem": product.image_url or "https://via.placeholder.com/300x300?text=Sem+Imagem",
+            "categoria": product.category.name.lower() if product.category else "sem-categoria"
+        }
+        for product in products
+    ]
+
+@router.get("/search")
+def search_products(q: str, db: Session = Depends(get_db)):
+    """Busca produtos por termo (formato frontend)"""
+    if not q or len(q.strip()) < 2:
+        return []
+    
+    products = get_products(db, search=q.strip())
+    
+    return [
+        {
+            "nome": product.name,
+            "preco": f"R$ {product.price:.2f}".replace(".", ","),
+            "imagem": product.image_url or "https://via.placeholder.com/300x300?text=Sem+Imagem",
+            "categoria": product.category.name.lower() if product.category else "sem-categoria"
+        }
+        for product in products
+    ]
+
+@router.post("/frontend-create")
+def create_product_frontend(
+    produto: dict,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_admin_user)
+):
+    """Cadastra produto via frontend"""
+    try:
+        from app.models.models import Category
+        
+        nome = produto.get('nome')
+        preco = float(produto.get('preco', 0))
+        categoria = produto.get('categoria')
+        imagem = produto.get('imagem')
+        descricao = produto.get('descricao')
+        
+        # Busca categoria existente
+        category = None
+        if categoria:
+            category = db.query(Category).filter(Category.name.ilike(categoria)).first()
+        
+        product_data = ProductCreate(
+            name=nome,
+            description=descricao,
+            price=preco,
+            image_url=imagem,
+            stock=100,
+            category_id=category.id if category else None
+        )
+        
+        new_product = create_product(db=db, product=product_data)
+        
+        return {
+            "success": True,
+            "message": "Produto cadastrado com sucesso!"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        return {"error": f"Erro: {str(e)}"}
+
+# ============================================================================
+# ENDPOINTS ADMINISTRATIVOS (formato padrão)
+# ============================================================================
+
 @router.get("/", response_model=List[Product])
-def read_products(
+def get_products_admin(
     skip: int = 0, 
     limit: int = 100, 
     category_id: int = None,
@@ -18,37 +126,16 @@ def read_products(
     search: str = None,
     db: Session = Depends(get_db)
 ):
-    products = get_products(db, skip=skip, limit=limit, category_id=category_id, min_price=min_price, max_price=max_price, search=search)
-    return products
-
-@router.get("/frontend")
-def read_products_frontend(
-    skip: int = 0, 
-    limit: int = 100, 
-    category_id: int = None,
-    db: Session = Depends(get_db)
-):
-    """Endpoint que retorna produtos no formato específico para o frontend"""
-    products = get_products(db, skip=skip, limit=limit, category_id=category_id)
-    
-    # Converte para o formato esperado pelo frontend
-    frontend_products = []
-    for product in products:
-        frontend_product = {
-            "nome": product.name,
-            "preco": f"R$ {product.price:.2f}".replace(".", ","),
-            "imagem": product.image_url or "https://via.placeholder.com/300x300?text=Sem+Imagem",
-            "categoria": product.category.name.lower() if product.category else "sem-categoria"
-        }
-        frontend_products.append(frontend_product)
-    
-    return frontend_products
+    """Lista produtos (formato admin)"""
+    return get_products(db, skip=skip, limit=limit, category_id=category_id, 
+                       min_price=min_price, max_price=max_price, search=search)
 
 @router.get("/{product_id}", response_model=Product)
-def read_product(product_id: int, db: Session = Depends(get_db)):
+def get_product_by_id(product_id: int, db: Session = Depends(get_db)):
+    """Busca produto por ID"""
     product = get_product(db, product_id=product_id)
-    if product is None:
-        raise HTTPException(status_code=404, detail="Product not found")
+    if not product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
     return product
 
 @router.post("/", response_model=Product)
@@ -57,65 +144,17 @@ def create_new_product(
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_admin_user)
 ):
+    """Cria produto (formato admin)"""
     return create_product(db=db, product=product)
 
+# ============================================================================
+# ENDPOINTS DE CATEGORIAS
+# ============================================================================
+
 @router.get("/categories/", response_model=List[Category])
-def read_categories(db: Session = Depends(get_db)):
+def get_categories_list(db: Session = Depends(get_db)):
+    """Lista todas as categorias"""
     return get_categories(db)
-
-@router.get("/categoria/{categoria_nome}")
-def read_products_by_category(
-    categoria_nome: str,
-    db: Session = Depends(get_db)
-):
-    """Endpoint para buscar produtos por categoria no formato frontend"""
-    # Busca a categoria pelo nome
-    from app.models.models import Category
-    category = db.query(Category).filter(Category.name.ilike(f"%{categoria_nome}%")).first()
-    
-    if not category:
-        return []
-    
-    # Busca produtos da categoria
-    products = get_products(db, category_id=category.id)
-    
-    # Converte para formato frontend
-    frontend_products = []
-    for product in products:
-        frontend_product = {
-            "nome": product.name,
-            "preco": f"R$ {product.price:.2f}".replace(".", ","),
-            "imagem": product.image_url or "https://via.placeholder.com/300x300?text=Sem+Imagem",
-            "categoria": product.category.name.lower() if product.category else "sem-categoria"
-        }
-        frontend_products.append(frontend_product)
-    
-    return frontend_products
-
-@router.get("/search")
-def search_products(
-    q: str,
-    db: Session = Depends(get_db)
-):
-    """Endpoint de busca para a barra de pesquisa"""
-    if not q or len(q.strip()) < 2:
-        return []
-    
-    # Busca produtos pelo termo
-    products = get_products(db, search=q.strip())
-    
-    # Converte para formato frontend
-    frontend_products = []
-    for product in products:
-        frontend_product = {
-            "nome": product.name,
-            "preco": f"R$ {product.price:.2f}".replace(".", ","),
-            "imagem": product.image_url or "https://via.placeholder.com/300x300?text=Sem+Imagem",
-            "categoria": product.category.name.lower() if product.category else "sem-categoria"
-        }
-        frontend_products.append(frontend_product)
-    
-    return frontend_products
 
 @router.post("/categories/", response_model=Category)
 def create_new_category(
@@ -123,4 +162,5 @@ def create_new_category(
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_admin_user)
 ):
+    """Cria nova categoria"""
     return create_category(db=db, category=category)

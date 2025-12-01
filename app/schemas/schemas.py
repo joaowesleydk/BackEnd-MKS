@@ -37,7 +37,7 @@ class ProductBase(BaseModel):
     price: float
     image_url: Optional[str] = None
     stock: int = 0
-    category_id: int
+    category_id: Optional[int] = None
 
 class ProductCreate(ProductBase):
     pass

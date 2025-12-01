@@ -2,49 +2,89 @@
 
 Backend em Python para e-commerce de moda e beleza usando FastAPI.
 
-## Configuração
+## 🚀 Configuração Rápida
 
-1. **Instalar dependências:**
+### 1. Instalar dependências
 ```bash
 pip install -r requirements.txt
 ```
 
-2. **Configurar banco de dados:**
-- Instale PostgreSQL
-- Crie um banco chamado `mks_store`
-- Copie `.env.example` para `.env` e configure suas variáveis
+### 2. Configurar variáveis de ambiente
+Copie `.env.example` para `.env` e configure:
+```bash
+cp .env.example .env
+```
 
-3. **Executar aplicação:**
+### 3. Executar aplicação
 ```bash
 uvicorn app.main:app --reload
 ```
 
-## Endpoints Principais
+## 📋 Endpoints Principais
+
+### Frontend (formato específico)
+- `GET /api/products/frontend` - Lista produtos
+- `GET /api/products/categoria/{nome}` - Produtos por categoria  
+- `GET /api/products/search?q=termo` - Busca produtos
+- `POST /api/products/frontend-create` - Cadastra produto (admin)
 
 ### Autenticação
 - `POST /api/auth/login` - Login
-- `GET /api/auth/me` - Dados do usuário logado
+- `POST /api/auth/register` - Cadastro
+- `POST /api/auth/google-login` - Login com Google
+- `GET /api/auth/me` - Dados do usuário
 
-### Usuários
-- `POST /api/users/register` - Cadastro
-
-### Produtos
-- `GET /api/products/` - Listar produtos
-- `GET /api/products/{id}` - Produto específico
-- `POST /api/products/` - Criar produto
-- `GET /api/products/categories/` - Listar categorias
+### Administração
+- `POST /api/auth/create-admin` - Criar admin (máx 2)
 - `POST /api/products/categories/` - Criar categoria
+- `POST /api/upload/image` - Upload de imagem
 
-### Pedidos
-- `POST /api/orders/` - Criar pedido
-- `GET /api/orders/` - Pedidos do usuário
+## 🔧 Configuração
 
-## Documentação
-Acesse `http://localhost:8000/docs` para ver a documentação interativa da API.
+### Banco de dados
+```bash
+# PostgreSQL local
+DATABASE_URL=postgresql://user:password@localhost/mks_store
 
-## Estrutura do Banco
-- **users** - Usuários do sistema
-- **categories** - Categorias de produtos
-- **products** - Produtos (moda/beleza)
-- **orders** - Pedidos
-- **order_items** - Itens dos pedidos
+# Ou usar o setup automático
+POST /api/auth/setup-database
+```
+
+### Cloudinary (upload de imagens)
+```bash
+CLOUDINARY_CLOUD_NAME=seu_cloud_name
+CLOUDINARY_API_KEY=sua_api_key
+CLOUDINARY_API_SECRET=seu_api_secret
+```
+
+### Google OAuth
+```bash
+GOOGLE_CLIENT_ID=seu_client_id
+GOOGLE_REDIRECT_URI=https://seu-frontend.com
+```
+
+## 📖 Documentação
+
+Acesse `http://localhost:8000/docs` para documentação interativa.
+
+## 🏗️ Estrutura
+
+```
+app/
+├── api/routes/     # Endpoints da API
+├── core/          # Configurações e segurança  
+├── crud/          # Operações do banco
+├── models/        # Modelos SQLAlchemy
+└── schemas/       # Schemas Pydantic
+```
+
+## 🔐 Sistema de Roles
+
+- **user**: Pode fazer pedidos e ver produtos
+- **admin**: Pode cadastrar produtos e categorias (máximo 2 admins)
+
+## 🌐 Deploy
+
+Configurado para deploy automático no Render via `render.yaml`.
+
+URL da API: https://backend-mks.onrender.com
