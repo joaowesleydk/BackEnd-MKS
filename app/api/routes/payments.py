@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.api.routes.auth import get_current_user
 from app.schemas.schemas import User
-from app.core.mercadopago_config import mp
+from app.core.mercadopago_config import get_mp
 import os
 
 router = APIRouter()
@@ -27,6 +27,7 @@ def create_payment_preference(
         }
         
         # Cria preferência
+        mp = get_mp()
         response = mp.preference().create(preference)
         
         return {
@@ -50,6 +51,7 @@ async def mercadopago_webhook(request: Request, db: Session = Depends(get_db)):
             
             if payment_id:
                 # Busca pagamento igual ao Node.js
+                mp = get_mp()
                 payment_response = mp.payment().get(payment_id)
                 payment = payment_response["response"]
                 
@@ -68,6 +70,7 @@ async def mercadopago_webhook(request: Request, db: Session = Depends(get_db)):
 def get_payment_status(payment_id: str):
     """Consulta status de um pagamento"""
     try:
+        mp = get_mp()
         payment_response = mp.payment().get(payment_id)
         payment = payment_response["response"]
         
@@ -81,34 +84,3 @@ def get_payment_status(payment_id: str):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao consultar pagamento: {str(e)}")
-
-# Funções auxiliares
-async def process_approved_payment(payment, external_reference, db):
-    """Processa pagamento aprovado"""
-    try:
-        # Aqui você pode:
-        # 1. Criar pedido no banco
-        # 2. Atualizar estoque
-        # 3. Enviar email de confirmação
-        # 4. etc.
-        
-        print(f"Pagamento aprovado: {payment.get('id')} - Ref: {external_reference}")
-        
-        # Exemplo: extrair user_id da referência
-        if external_reference and external_reference.startswith("user_"):
-            parts = external_reference.split("_")
-            if len(parts) >= 2:
-                user_id = parts[1]
-                # Processar pedido para o usuário
-                
-    except Exception as e:
-        print(f"Erro ao processar pagamento aprovado: {str(e)}")
-
-async def process_rejected_payment(payment, external_reference, db):
-    """Processa pagamento rejeitado"""
-    try:
-        print(f"Pagamento rejeitado: {payment.get('id')} - Ref: {external_reference}")
-        # Lógica para pagamento rejeitado
-        
-    except Exception as e:
-        print(f"Erro ao processar pagamento rejeitado: {str(e)}")

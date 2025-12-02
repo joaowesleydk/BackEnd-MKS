@@ -12,5 +12,12 @@ def get_mp_client():
     sdk = mercadopago.SDK(access_token)
     return sdk
 
-# Cliente global
-mp = get_mp_client()
+# Cliente global (inicializado sob demanda)
+mp = None
+
+def get_mp():
+    """Retorna cliente MP inicializado sob demanda"""
+    global mp
+    if mp is None:
+        mp = get_mp_client()
+    return mp
