@@ -29,9 +29,8 @@ uvicorn app.main:app --reload
 - `POST /api/products/frontend-create` - Cadastra produto (admin)
 
 ### Autenticação
-- `POST /api/auth/login` - Login
-- `POST /api/auth/register` - Cadastro
-- `POST /api/auth/google-login` - Login com Google
+- `POST /api/auth/login` - Login (JSON: email, password)
+- `POST /api/auth/register` - Cadastro (JSON: email, name, password)
 - `GET /api/auth/me` - Dados do usuário
 
 ### Administração

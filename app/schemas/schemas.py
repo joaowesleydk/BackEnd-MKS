@@ -6,7 +6,9 @@ class UserBase(BaseModel):
     email: EmailStr
     name: str
 
-class UserCreate(UserBase):
+class UserCreate(BaseModel):
+    email: EmailStr
+    name: str
     password: str
 
 class User(UserBase):
@@ -15,8 +17,7 @@ class User(UserBase):
     is_active: bool
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 class CategoryBase(BaseModel):
     name: str
@@ -28,8 +29,7 @@ class CategoryCreate(CategoryBase):
 class Category(CategoryBase):
     id: int
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 class ProductBase(BaseModel):
     name: str
@@ -48,8 +48,7 @@ class Product(ProductBase):
     created_at: datetime
     category: Optional[Category] = None
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 class OrderItemBase(BaseModel):
     product_id: int
@@ -63,8 +62,7 @@ class OrderItem(OrderItemBase):
     price: float
     product: Optional[Product] = None
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 class OrderBase(BaseModel):
     items: List[OrderItemCreate]
@@ -80,8 +78,11 @@ class Order(BaseModel):
     created_at: datetime
     items: List[OrderItem] = []
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
 
 class Token(BaseModel):
     access_token: str
@@ -101,8 +102,7 @@ class CartItem(CartItemBase):
     id: int
     product: Optional[Product] = None
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 class Cart(BaseModel):
     id: int
@@ -110,5 +110,4 @@ class Cart(BaseModel):
     items: List[CartItem] = []
     total: float = 0
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}

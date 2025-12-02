@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.core.security import verify_password, create_access_token, get_password_hash
 from app.crud.crud import get_user_by_email
-from app.schemas.schemas import Token, User, UserCreate
+from app.schemas.schemas import Token, User, UserCreate, LoginRequest
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
@@ -65,9 +65,9 @@ def get_admin_user(current_user: User = Depends(get_current_user), db: Session =
 # ============================================================================
 
 @router.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """Login com email e senha"""
-    user = authenticate_user(db, form_data.username, form_data.password)
+def login(login_data: LoginRequest, db: Session = Depends(get_db)):
+    """Login com email e senha em JSON"""
+    user = authenticate_user(db, login_data.email, login_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -81,29 +81,34 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
+
+
 @router.get("/me", response_model=User)
 def get_current_user_info(current_user: User = Depends(get_current_user)):
     """Retorna dados do usuário logado"""
     return current_user
 
 @router.post("/register")
-def register_user(email: str, name: str, password: str, db: Session = Depends(get_db)):
+def register_user(user_data: UserCreate, db: Session = Depends(get_db)):
     """Registra novo usuário"""
     try:
         # Verifica se email existe
-        existing = db.execute(text("SELECT id FROM users WHERE email = :email"), {"email": email})
+        existing = db.execute(text("SELECT id FROM users WHERE email = :email"), {"email": user_data.email})
         if existing.fetchone():
-            return {"error": "Email já cadastrado"}
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email já cadastrado"
+            )
         
         # Cria usuário
-        hashed_pw = get_password_hash(password)
+        hashed_pw = get_password_hash(user_data.password)
         
         db.execute(text("""
             INSERT INTO users (email, name, hashed_password, role, is_active, created_at)
             VALUES (:email, :name, :password, 'user', true, NOW())
         """), {
-            "email": email,
-            "name": name, 
+            "email": user_data.email,
+            "name": user_data.name, 
             "password": hashed_pw
         })
         
@@ -111,12 +116,17 @@ def register_user(email: str, name: str, password: str, db: Session = Depends(ge
         
         return {
             "success": True,
-            "message": f"Usuário criado: {email}"
+            "message": f"Usuário criado: {user_data.email}"
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
-        return {"error": f"Erro: {str(e)}"}
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro interno: {str(e)}"
+        )
 
 # ============================================================================
 # GOOGLE OAUTH
