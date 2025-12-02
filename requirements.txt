@@ -1,30 +1,29 @@
 # Core Framework
-fastapi==0.104.1
-uvicorn==0.24.0
+fastapi==0.95.2
+uvicorn==0.22.0
 
 # Database
-sqlalchemy==2.0.23
-psycopg2-binary==2.9.9
-alembic==1.12.1
+sqlalchemy==1.4.48
+psycopg2-binary==2.9.6
 
 # Authentication & Security
-PyJWT==2.8.0
+PyJWT==2.7.0
 passlib==1.7.4
-bcrypt==4.1.2
+bcrypt==4.0.1
 python-jose[cryptography]==3.3.0
 
 # File Upload & Cloud Storage
 python-multipart==0.0.6
-cloudinary==1.36.0
+cloudinary==1.33.0
 
 # Validation & Configuration
-pydantic==2.5.0
+pydantic==1.10.8
 python-dotenv==1.0.0
-email-validator==2.1.0
+email-validator==2.0.0
 
 # Google OAuth
 requests==2.31.0
-google-auth==2.23.4
+google-auth==2.20.0
 
 # Mercado Pago
-mercadopago==2.2.1
+mercadopago==2.2.0
