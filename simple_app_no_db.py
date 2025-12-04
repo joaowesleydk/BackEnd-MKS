@@ -42,6 +42,21 @@ def register():
     # Mock register - sempre retorna sucesso para teste
     return {"success": True, "message": f"Usuário criado: {email}"}
 
+@app.route('/api/products/frontend-create', methods=['POST'])
+def create_product():
+    data = request.get_json()
+    
+    # Mock - sempre retorna sucesso para teste
+    return {
+        "success": True,
+        "message": "Produto criado com sucesso",
+        "product": {
+            "id": 123,
+            "name": data.get('name', 'Produto'),
+            "price": data.get('price', 0)
+        }
+    }
+
 @app.route('/api/payments/create-preference', methods=['POST'])
 def create_preference():
     data = request.get_json()
