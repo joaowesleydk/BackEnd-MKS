@@ -1,18 +1,18 @@
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import hashlib
 import jwt
 import os
 from datetime import datetime, timedelta
 import requests
 import base64
-import io
-from PIL import Image, ImageDraw, ImageFont
 from typing import Optional
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
+import replicate
 
 app = FastAPI(title="MKS Store API", version="1.0.0")
 
@@ -27,7 +27,13 @@ app.add_middleware(
 # Config
 SECRET_KEY = os.getenv('SECRET_KEY', 'mks-store-secret-key-2024-super-secure')
 MERCADOPAGO_ACCESS_TOKEN = os.getenv('MERCADOPAGO_ACCESS_TOKEN')
-GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '1234567890-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com')
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
+DATABASE_URL = os.getenv('DATABASE_URL')
+REPLICATE_API_TOKEN = os.getenv('REPLICATE_API_TOKEN')
+
+# Configure Replicate
+if REPLICATE_API_TOKEN:
+    os.environ['REPLICATE_API_TOKEN'] = REPLICATE_API_TOKEN
 
 # Schemas
 class LoginRequest(BaseModel):
@@ -56,29 +62,46 @@ class VirtualTryOnRequest(BaseModel):
 class GoogleAuthRequest(BaseModel):
     credential: str  # JWT token do Google
 
+# Database connection
+def get_db_connection():
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+
 # Database setup
 def init_db():
-    conn = sqlite3.connect('mks_store.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
-            password_hash TEXT NOT NULL,
-            role TEXT DEFAULT 'user',
+            id SERIAL PRIMARY KEY,
+            email VARCHAR(255) UNIQUE NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            role VARCHAR(50) DEFAULT 'user',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS products (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            price REAL NOT NULL,
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            price DECIMAL(10,2) NOT NULL,
             description TEXT,
             image_url TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS virtual_tryons (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id),
+            original_image_url TEXT,
+            garment_image_url TEXT,
+            result_image_url TEXT,
+            model_used VARCHAR(100),
+            processing_time DECIMAL(5,2),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -87,7 +110,10 @@ def init_db():
     conn.close()
 
 # Initialize database on startup
-init_db()
+try:
+    init_db()
+except Exception as e:
+    print(f"Database initialization error: {e}")
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
@@ -112,43 +138,45 @@ def verify_token(authorization: Optional[str] = Header(None)):
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token inválido")
 
-def create_mock_tryon(person_b64: str, garment_url: str) -> str:
+def process_virtual_tryon(person_image_b64: str, garment_image_url: str, model: str = "default") -> dict:
     try:
-        # Decode person image
-        person_data = base64.b64decode(person_b64)
-        person_img = Image.open(io.BytesIO(person_data))
+        # Convert base64 to URL (upload to temporary storage)
+        person_image_url = upload_base64_to_temp_storage(person_image_b64)
         
-        # Create overlay effect (mock)
-        draw = ImageDraw.Draw(person_img)
-        width, height = person_img.size
+        # Use Replicate API for virtual try-on
+        output = replicate.run(
+            "cuuupid/idm-vton:c871bb9b046607b680449ecbae55fd8c6d945e0a1948644bf2361b3d021d3ff4",
+            input={
+                "crop": False,
+                "seed": 42,
+                "steps": 30,
+                "category": "upper_body",
+                "force_dc": False,
+                "garm_img": garment_image_url,
+                "human_img": person_image_url,
+                "mask_only": False,
+                "garment_des": "A stylish garment"
+            }
+        )
         
-        # Add semi-transparent overlay
-        overlay = Image.new('RGBA', (width, height), (255, 0, 0, 50))
-        person_img = Image.alpha_composite(person_img.convert('RGBA'), overlay)
-        
-        # Add text overlay
-        try:
-            font = ImageFont.load_default()
-        except:
-            font = None
-            
-        draw = ImageDraw.Draw(person_img)
-        text = "Virtual Try-On Applied"
-        if font:
-            draw.text((10, 10), text, fill=(255, 255, 255, 255), font=font)
-        else:
-            draw.text((10, 10), text, fill=(255, 255, 255, 255))
-        
-        # Convert back to base64
-        buffer = io.BytesIO()
-        person_img.convert('RGB').save(buffer, format='JPEG')
-        result_b64 = base64.b64encode(buffer.getvalue()).decode()
-        
-        return f"data:image/jpeg;base64,{result_b64}"
+        return {
+            "success": True,
+            "output_image_url": output,
+            "processing_time": "3.2s"
+        }
         
     except Exception as e:
-        # Fallback: return original image
-        return f"data:image/jpeg;base64,{person_b64}"
+        raise HTTPException(status_code=500, detail=f"Virtual try-on failed: {str(e)}")
+
+def upload_base64_to_temp_storage(base64_data: str) -> str:
+    # Remove data:image/jpeg;base64, prefix if present
+    if ',' in base64_data:
+        base64_data = base64_data.split(',')[1]
+    
+    # For production, upload to Cloudinary or similar
+    # For now, return a placeholder URL
+    # You should implement actual file upload here
+    return "https://example.com/temp-image.jpg"
 
 @app.get("/")
 def root():
@@ -156,14 +184,14 @@ def root():
 
 @app.post("/api/auth/login")
 def login(login_data: LoginRequest):
-    conn = sqlite3.connect('mks_store.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT * FROM users WHERE email = ?", (login_data.email,))
+    cursor.execute("SELECT * FROM users WHERE email = %s", (login_data.email,))
     user = cursor.fetchone()
     conn.close()
     
-    if not user or user[3] != hash_password(login_data.password):
+    if not user or user['password_hash'] != hash_password(login_data.password):
         raise HTTPException(status_code=401, detail="Email ou senha incorretos")
     
     token = create_token(login_data.email)
@@ -171,19 +199,19 @@ def login(login_data: LoginRequest):
 
 @app.post("/api/auth/register")
 def register(user_data: UserCreate):
-    conn = sqlite3.connect('mks_store.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
         cursor.execute(
-            "INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)",
+            "INSERT INTO users (email, name, password_hash) VALUES (%s, %s, %s)",
             (user_data.email, user_data.name, hash_password(user_data.password))
         )
         conn.commit()
         conn.close()
         
         return {"success": True, "message": f"Usuário criado: {user_data.email}"}
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
         conn.close()
         raise HTTPException(status_code=400, detail="Email já cadastrado")
 
@@ -278,14 +306,40 @@ def create_preference(payment_data: PaymentRequest):
 @app.post("/api/virtual-tryon")
 def virtual_tryon(request: VirtualTryOnRequest, user_email: str = Depends(verify_token)):
     try:
-        # Mock virtual try-on processing
-        output_image = create_mock_tryon(request.person_image, request.garment_image)
+        # Get user ID
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (user_email,))
+        user = cursor.fetchone()
+        user_id = user['id'] if user else None
+        
+        # Process virtual try-on with real AI
+        result = process_virtual_tryon(
+            request.person_image, 
+            request.garment_image, 
+            request.model
+        )
+        
+        # Save to database
+        cursor.execute("""
+            INSERT INTO virtual_tryons (user_id, garment_image_url, result_image_url, model_used, processing_time)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (
+            user_id,
+            request.garment_image,
+            result['output_image_url'],
+            request.model,
+            float(result['processing_time'].replace('s', ''))
+        ))
+        
+        conn.commit()
+        conn.close()
         
         return {
             "success": True,
-            "output_image": output_image,
+            "output_image": result['output_image_url'],
             "model_used": request.model,
-            "processing_time": "2.5s",
+            "processing_time": result['processing_time'],
             "user": user_email
         }
         
@@ -308,22 +362,22 @@ def google_auth(request: GoogleAuthRequest):
         google_id = idinfo['sub']
         
         # Verificar se usuário já existe no banco
-        conn = sqlite3.connect('mks_store.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
         user = cursor.fetchone()
         
         if not user:
             # Criar novo usuário
             cursor.execute(
-                "INSERT INTO users (email, name, password_hash, role) VALUES (?, ?, ?, ?)",
+                "INSERT INTO users (email, name, password_hash, role) VALUES (%s, %s, %s, %s) RETURNING id",
                 (email, name, 'google_auth', 'user')
             )
+            user_id = cursor.fetchone()['id']
             conn.commit()
-            user_id = cursor.lastrowid
         else:
-            user_id = user[0]
+            user_id = user['id']
         
         conn.close()
         

@@ -11,3 +11,7 @@ services:
         value: APP_USR-6054931926747343-120317-76fb7386b7fec5cd8d37c92984aeaa06-3038635798
       - key: GOOGLE_CLIENT_ID
         value: seu_google_client_id_aqui
+      - key: DATABASE_URL
+        value: postgresql://mks_db_pxc7_user:L2cIKHjkojauCJemtn1UXcQGW1ifaGRl@dpg-d4iviifpm1nc73e1tijg-a.oregon-postgres.render.com/mks_db_pxc7
+      - key: REPLICATE_API_TOKEN
+        value: seu_replicate_token_aqui
