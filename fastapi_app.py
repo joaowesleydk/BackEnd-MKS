@@ -1,8 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import asyncpg
 import hashlib
 import jwt
 import os
@@ -13,6 +12,7 @@ from typing import Optional
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 import replicate
+import asyncio
 
 app = FastAPI(title="MKS Store API", version="1.0.0")
 
