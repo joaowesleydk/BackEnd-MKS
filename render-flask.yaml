@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: mks-flask-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python simple_app.py
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: MERCADOPAGO_ACCESS_TOKEN
+        sync: false
