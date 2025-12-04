@@ -46,8 +46,10 @@ class UserCreate(BaseModel):
 class ProductCreate(BaseModel):
     name: str
     price: float
+    category: str = ""
     description: str = ""
     image_url: str = ""
+    promocao: bool = False
 
 class PaymentRequest(BaseModel):
     items: list
@@ -85,8 +87,10 @@ async def startup():
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
                 price DECIMAL(10,2) NOT NULL,
+                category VARCHAR(100),
                 description TEXT,
                 image_url TEXT,
+                promocao BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -257,8 +261,8 @@ async def create_product(product_data: ProductCreate):
     conn = await get_db()
     
     product_id = await conn.fetchval(
-        "INSERT INTO products (name, price, description, image_url) VALUES ($1, $2, $3, $4) RETURNING id",
-        product_data.name, product_data.price, product_data.description, product_data.image_url
+        "INSERT INTO products (name, price, category, description, image_url, promocao) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+        product_data.name, product_data.price, product_data.category, product_data.description, product_data.image_url, product_data.promocao
     )
     
     await conn.close()
@@ -269,7 +273,8 @@ async def create_product(product_data: ProductCreate):
         "product": {
             "id": product_id,
             "name": product_data.name,
-            "price": product_data.price
+            "price": product_data.price,
+            "category": product_data.category
         }
     }
 
@@ -279,18 +284,40 @@ async def list_products():
     products = await conn.fetch("SELECT * FROM products ORDER BY created_at DESC")
     await conn.close()
     
-    return {
-        "products": [
-            {
-                "id": p['id'],
-                "name": p['name'],
-                "price": float(p['price']),
-                "description": p['description'],
-                "image_url": p['image_url'],
-                "created_at": p['created_at'].isoformat()
-            } for p in products
-        ]
-    }
+    return [
+        {
+            "id": p['id'],
+            "name": p['name'],
+            "price": float(p['price']),
+            "category": p['category'],
+            "description": p['description'],
+            "image_url": p['image_url'],
+            "promocao": p['promocao'],
+            "created_at": p['created_at'].isoformat()
+        } for p in products
+    ]
+
+@app.get("/api/products/categoria/{categoria}")
+async def products_by_category(categoria: str):
+    conn = await get_db()
+    products = await conn.fetch(
+        "SELECT * FROM products WHERE category = $1 ORDER BY created_at DESC", 
+        categoria
+    )
+    await conn.close()
+    
+    return [
+        {
+            "id": p['id'],
+            "name": p['name'],
+            "price": float(p['price']),
+            "category": p['category'],
+            "description": p['description'],
+            "image_url": p['image_url'],
+            "promocao": p['promocao'],
+            "created_at": p['created_at'].isoformat()
+        } for p in products
+    ]
 
 @app.post("/api/virtual-tryon")
 async def virtual_tryon(request: VirtualTryOnRequest, user_email: str = Depends(verify_token)):
