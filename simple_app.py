@@ -5,6 +5,7 @@ import psycopg2
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 from datetime import datetime, timedelta
+import requests
 
 app = Flask(__name__)
 CORS(app)
@@ -12,6 +13,7 @@ CORS(app)
 # Config
 SECRET_KEY = os.getenv('SECRET_KEY', 'mks-store-secret-key-2024-super-secure')
 DATABASE_URL = os.getenv('DATABASE_URL')
+MERCADOPAGO_ACCESS_TOKEN = os.getenv('MERCADOPAGO_ACCESS_TOKEN')
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -90,6 +92,57 @@ def register():
     finally:
         if conn:
             conn.close()
+
+@app.route('/api/payments/create-preference', methods=['POST'])
+def create_preference():
+    data = request.get_json()
+    items = data.get('items', [])
+    
+    if not items:
+        return {"error": "Items são obrigatórios"}, 400
+    
+    try:
+        # Monta preferência do Mercado Pago
+        preference_data = {
+            "items": [
+                {
+                    "title": item.get('title', 'Produto'),
+                    "quantity": item.get('quantity', 1),
+                    "unit_price": float(item.get('price', 0))
+                } for item in items
+            ],
+            "back_urls": {
+                "success": "https://seu-frontend.com/success",
+                "failure": "https://seu-frontend.com/failure",
+                "pending": "https://seu-frontend.com/pending"
+            },
+            "auto_return": "approved"
+        }
+        
+        # Faz requisição para API do Mercado Pago
+        headers = {
+            "Authorization": f"Bearer {MERCADOPAGO_ACCESS_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(
+            "https://api.mercadopago.com/checkout/preferences",
+            json=preference_data,
+            headers=headers
+        )
+        
+        if response.status_code == 201:
+            preference = response.json()
+            return {
+                "id": preference["id"],
+                "init_point": preference["init_point"],
+                "sandbox_init_point": preference["sandbox_init_point"]
+            }
+        else:
+            return {"error": "Erro ao criar preferência", "details": response.text}, 400
+            
+    except Exception as e:
+        return {"error": str(e)}, 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))

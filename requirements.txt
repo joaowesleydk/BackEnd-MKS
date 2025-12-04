@@ -3,3 +3,4 @@ Flask-CORS==3.0.10
 psycopg2-binary==2.8.6
 PyJWT==2.1.0
 Werkzeug==2.0.3
+requests==2.25.1
