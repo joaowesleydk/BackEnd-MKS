@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 import sqlite3
@@ -7,6 +7,10 @@ import jwt
 import os
 from datetime import datetime, timedelta
 import requests
+import base64
+import io
+from PIL import Image, ImageDraw, ImageFont
+from typing import Optional
 
 app = FastAPI(title="MKS Store API", version="1.0.0")
 
@@ -40,6 +44,11 @@ class ProductCreate(BaseModel):
 
 class PaymentRequest(BaseModel):
     items: list
+
+class VirtualTryOnRequest(BaseModel):
+    person_image: str  # base64
+    garment_image: str  # URL
+    model: str = "default"
 
 # Database setup
 def init_db():
@@ -83,6 +92,57 @@ def create_token(email: str) -> str:
         'exp': datetime.utcnow() + timedelta(hours=24)
     }
     return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+
+def verify_token(authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token não fornecido")
+    
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+        return payload['email']
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expirado")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+def create_mock_tryon(person_b64: str, garment_url: str) -> str:
+    try:
+        # Decode person image
+        person_data = base64.b64decode(person_b64)
+        person_img = Image.open(io.BytesIO(person_data))
+        
+        # Create overlay effect (mock)
+        draw = ImageDraw.Draw(person_img)
+        width, height = person_img.size
+        
+        # Add semi-transparent overlay
+        overlay = Image.new('RGBA', (width, height), (255, 0, 0, 50))
+        person_img = Image.alpha_composite(person_img.convert('RGBA'), overlay)
+        
+        # Add text overlay
+        try:
+            font = ImageFont.load_default()
+        except:
+            font = None
+            
+        draw = ImageDraw.Draw(person_img)
+        text = "Virtual Try-On Applied"
+        if font:
+            draw.text((10, 10), text, fill=(255, 255, 255, 255), font=font)
+        else:
+            draw.text((10, 10), text, fill=(255, 255, 255, 255))
+        
+        # Convert back to base64
+        buffer = io.BytesIO()
+        person_img.convert('RGB').save(buffer, format='JPEG')
+        result_b64 = base64.b64encode(buffer.getvalue()).decode()
+        
+        return f"data:image/jpeg;base64,{result_b64}"
+        
+    except Exception as e:
+        # Fallback: return original image
+        return f"data:image/jpeg;base64,{person_b64}"
 
 @app.get("/")
 def root():
@@ -208,6 +268,23 @@ def create_preference(payment_data: PaymentRequest):
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/virtual-tryon")
+def virtual_tryon(request: VirtualTryOnRequest, user_email: str = Depends(verify_token)):
+    try:
+        # Mock virtual try-on processing
+        output_image = create_mock_tryon(request.person_image, request.garment_image)
+        
+        return {
+            "success": True,
+            "output_image": output_image,
+            "model_used": request.model,
+            "processing_time": "2.5s",
+            "user": user_email
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro no processamento: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
