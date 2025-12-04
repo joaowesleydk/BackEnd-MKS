@@ -11,6 +11,8 @@ import base64
 import io
 from PIL import Image, ImageDraw, ImageFont
 from typing import Optional
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 app = FastAPI(title="MKS Store API", version="1.0.0")
 
@@ -25,6 +27,7 @@ app.add_middleware(
 # Config
 SECRET_KEY = os.getenv('SECRET_KEY', 'mks-store-secret-key-2024-super-secure')
 MERCADOPAGO_ACCESS_TOKEN = os.getenv('MERCADOPAGO_ACCESS_TOKEN')
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '1234567890-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com')
 
 # Schemas
 class LoginRequest(BaseModel):
@@ -49,6 +52,9 @@ class VirtualTryOnRequest(BaseModel):
     person_image: str  # base64
     garment_image: str  # URL
     model: str = "default"
+
+class GoogleAuthRequest(BaseModel):
+    credential: str  # JWT token do Google
 
 # Database setup
 def init_db():
@@ -285,6 +291,60 @@ def virtual_tryon(request: VirtualTryOnRequest, user_email: str = Depends(verify
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro no processamento: {str(e)}")
+
+@app.post("/api/auth/google")
+def google_auth(request: GoogleAuthRequest):
+    try:
+        # Validar token do Google
+        idinfo = id_token.verify_oauth2_token(
+            request.credential, 
+            google_requests.Request(), 
+            GOOGLE_CLIENT_ID
+        )
+        
+        # Extrair dados do usuário
+        email = idinfo['email']
+        name = idinfo['name']
+        google_id = idinfo['sub']
+        
+        # Verificar se usuário já existe no banco
+        conn = sqlite3.connect('mks_store.db')
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+        user = cursor.fetchone()
+        
+        if not user:
+            # Criar novo usuário
+            cursor.execute(
+                "INSERT INTO users (email, name, password_hash, role) VALUES (?, ?, ?, ?)",
+                (email, name, 'google_auth', 'user')
+            )
+            conn.commit()
+            user_id = cursor.lastrowid
+        else:
+            user_id = user[0]
+        
+        conn.close()
+        
+        # Criar token JWT próprio
+        access_token = create_token(email)
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user_id,
+                "email": email,
+                "name": name,
+                "role": "user"
+            }
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail="Token do Google inválido")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro na autenticação: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

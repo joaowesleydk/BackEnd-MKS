@@ -9,3 +9,5 @@ services:
         value: mks-store-secret-key-2024-super-secure
       - key: MERCADOPAGO_ACCESS_TOKEN
         value: APP_USR-6054931926747343-120317-76fb7386b7fec5cd8d37c92984aeaa06-3038635798
+      - key: GOOGLE_CLIENT_ID
+        value: seu_google_client_id_aqui
