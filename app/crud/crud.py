@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.models.models import User, Product, Category, Order, OrderItem, Cart, CartItem
 from app.schemas.schemas import UserCreate, ProductCreate, CategoryCreate, OrderCreate, CartItemCreate
 from app.core.security import get_password_hash
@@ -7,7 +8,30 @@ def get_user(db: Session, user_id: int):
     return db.query(User).filter(User.id == user_id).first()
 
 def get_user_by_email(db: Session, email: str):
-    return db.query(User).filter(User.email == email).first()
+    try:
+        # Tenta usar SQLAlchemy ORM primeiro
+        return db.query(User).filter(User.email == email).first()
+    except Exception:
+        # Se falhar (coluna role não existe), usa SQL direto
+        try:
+            result = db.execute(text("""
+                SELECT id, email, name, hashed_password, is_active, created_at
+                FROM users WHERE email = :email
+            """), {"email": email})
+            row = result.fetchone()
+            if row:
+                user = User()
+                user.id = row[0]
+                user.email = row[1] 
+                user.name = row[2]
+                user.hashed_password = row[3]
+                user.is_active = row[4] if row[4] is not None else True
+                user.created_at = row[5]
+                user.role = "user"  # Define role padrão
+                return user
+            return None
+        except Exception:
+            return None
 
 def create_user(db: Session, user: UserCreate):
     hashed_password = get_password_hash(user.password)
