@@ -10,7 +10,9 @@ import requests
 import base64
 from typing import Optional, List, Dict, Any
 from fastapi import Depends
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
+import aiosmtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from jinja2 import Environment, FileSystemLoader
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
@@ -43,20 +45,26 @@ SMTP_USER = os.getenv('SMTP_USER', 'karinamodastore@gmail.com')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
 
 # Email configuration
-conf = ConnectionConfig(
-    MAIL_USERNAME=SMTP_USER,
-    MAIL_PASSWORD=SMTP_PASSWORD,
-    MAIL_FROM=SMTP_USER,
-    MAIL_PORT=SMTP_PORT,
-    MAIL_SERVER=SMTP_HOST,
-    MAIL_STARTTLS=True,
-    MAIL_SSL_TLS=False,
-    USE_CREDENTIALS=True,
-    VALIDATE_CERTS=True
-)
-
-fastmail = FastMail(conf)
 jinja_env = Environment(loader=FileSystemLoader('templates'))
+
+async def send_email(to_email: str, subject: str, html_content: str):
+    """Envia email usando aiosmtplib"""
+    message = MIMEMultipart('alternative')
+    message['Subject'] = subject
+    message['From'] = SMTP_USER
+    message['To'] = to_email
+    
+    html_part = MIMEText(html_content, 'html')
+    message.attach(html_part)
+    
+    await aiosmtplib.send(
+        message,
+        hostname=SMTP_HOST,
+        port=SMTP_PORT,
+        start_tls=True,
+        username=SMTP_USER,
+        password=SMTP_PASSWORD,
+    )
 
 # Schemas
 class LoginRequest(BaseModel):
@@ -568,14 +576,11 @@ async def send_contact_email(contact_data: ContactEmailRequest):
             timestamp=datetime.now().strftime("%d/%m/%Y %H:%M")
         )
         
-        message = MessageSchema(
+        await send_email(
+            to_email="karinamodastore@gmail.com",
             subject=f"Novo Contato - {contact_data.subject}",
-            recipients=["karinamodastore@gmail.com"],
-            body=html_content,
-            subtype=MessageType.html
+            html_content=html_content
         )
-        
-        await fastmail.send_message(message)
         
         return {
             "success": True,
@@ -599,14 +604,11 @@ async def send_order_confirmation(order_data: OrderConfirmationRequest):
             paymentMethod=order_data.paymentMethod
         )
         
-        message = MessageSchema(
+        await send_email(
+            to_email=order_data.customerEmail,
             subject=f"Pedido Confirmado #{order_data.orderId} - MKS Store",
-            recipients=[order_data.customerEmail],
-            body=html_content,
-            subtype=MessageType.html
+            html_content=html_content
         )
-        
-        await fastmail.send_message(message)
         
         return {
             "success": True,
@@ -629,14 +631,11 @@ async def send_new_order_notification(order_data: NewOrderRequest):
             total=order_data.total
         )
         
-        message = MessageSchema(
+        await send_email(
+            to_email="karinamodastore@gmail.com",
             subject=f"Novo Pedido #{order_data.orderId} - MKS Store",
-            recipients=["karinamodastore@gmail.com"],
-            body=html_content,
-            subtype=MessageType.html
+            html_content=html_content
         )
-        
-        await fastmail.send_message(message)
         
         return {
             "success": True,
