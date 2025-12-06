@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import requests
 import base64
 from typing import Optional
+from fastapi import Depends
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 import replicate
@@ -188,15 +189,19 @@ def root():
 
 @app.post("/api/auth/login")
 async def login(login_data: LoginRequest):
-    conn = await get_db()
-    user = await conn.fetchrow("SELECT * FROM users WHERE email = $1", login_data.email)
-    await conn.close()
-    
-    if not user or user['password_hash'] != hash_password(login_data.password):
-        raise HTTPException(status_code=401, detail="Email ou senha incorretos")
-    
-    token = create_token(login_data.email)
-    return {"access_token": token, "token_type": "bearer"}
+    try:
+        conn = await get_db()
+        user = await conn.fetchrow("SELECT * FROM users WHERE email = $1", login_data.email)
+        await conn.close()
+        
+        if not user or user['password_hash'] != hash_password(login_data.password):
+            raise HTTPException(status_code=401, detail="Email ou senha incorretos")
+        
+        token = create_token(login_data.email)
+        return {"access_token": token, "token_type": "bearer"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro interno no login: {str(e)}")
 
 @app.post("/api/auth/register")
 async def register(user_data: UserCreate):
@@ -256,8 +261,40 @@ async def google_auth(request: GoogleAuthRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro na autenticação: {str(e)}")
 
+async def verify_admin(authorization: Optional[str] = Header(None)):
+    """Verifica se o usuário é admin"""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token não fornecido")
+    
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+        email = payload['email']
+        
+        conn = await get_db()
+        user = await conn.fetchrow("SELECT role FROM users WHERE email = $1", email)
+        await conn.close()
+        
+        if user and user['role'] == 'admin':
+            return email
+        else:
+            # Se não tem role ou não é admin, verifica se é o primeiro usuário
+            conn = await get_db()
+            user_count = await conn.fetchval("SELECT COUNT(*) FROM users")
+            await conn.close()
+            
+            if user_count <= 1:
+                return email
+            
+            raise HTTPException(status_code=403, detail="Acesso negado. Apenas admins podem realizar esta ação.")
+            
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expirado")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
 @app.post("/api/products/frontend-create")
-async def create_product(product_data: ProductCreate):
+async def create_product(product_data: ProductCreate, admin_email: str = Depends(verify_admin)):
     conn = await get_db()
     
     product_id = await conn.fetchval(
@@ -355,6 +392,119 @@ async def virtual_tryon(request: VirtualTryOnRequest, user_email: str = Depends(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro no processamento: {str(e)}")
+
+@app.get("/api/auth/test-db")
+async def test_database():
+    """Testa conexão com banco e estrutura"""
+    try:
+        conn = await get_db()
+        user_count = await conn.fetchval("SELECT COUNT(*) FROM users")
+        
+        # Verifica se coluna role existe
+        role_exists = await conn.fetchval("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name='role'
+        """)
+        
+        await conn.close()
+        
+        return {
+            "database_connected": True,
+            "users_count": user_count,
+            "role_column_exists": bool(role_exists),
+            "message": "Banco funcionando!" if role_exists else "Execute /setup-database para configurar"
+        }
+        
+    except Exception as e:
+        return {
+            "database_connected": False,
+            "error": str(e),
+            "message": "Erro na conexão com banco"
+        }
+
+@app.post("/api/auth/setup-database")
+async def setup_database():
+    """Configura banco adicionando coluna role"""
+    try:
+        conn = await get_db()
+        
+        # Verifica se coluna existe
+        role_exists = await conn.fetchval("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name='role'
+        """)
+        
+        if role_exists:
+            # Garante que todos os usuários tenham role definido
+            await conn.execute("UPDATE users SET role = 'user' WHERE role IS NULL OR role = ''")
+            await conn.close()
+            return {"message": "Banco já configurado e atualizado!"}
+        
+        # Adiciona coluna role
+        await conn.execute("ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'user'")
+        await conn.execute("UPDATE users SET role = 'user' WHERE role IS NULL OR role = ''")
+        await conn.close()
+        
+        return {
+            "success": True,
+            "message": "Banco configurado com sucesso! Coluna 'role' adicionada."
+        }
+        
+    except Exception as e:
+        return {"error": f"Erro ao configurar banco: {str(e)}"}
+
+@app.post("/api/auth/create-admin")
+async def create_admin(email: str, name: str, password: str):
+    """Cria admin (máximo 2)"""
+    try:
+        conn = await get_db()
+        
+        # Configura banco se necessário
+        role_exists = await conn.fetchval("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name='role'
+        """)
+        
+        if not role_exists:
+            await conn.execute("ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'user'")
+            await conn.execute("UPDATE users SET role = 'user' WHERE role IS NULL OR role = ''")
+        
+        # Verifica limite de admins
+        try:
+            admin_count = await conn.fetchval("SELECT COUNT(*) FROM users WHERE role = 'admin'")
+        except:
+            admin_count = 0
+            
+        if admin_count >= 2:
+            await conn.close()
+            return {"error": "Máximo de 2 admins permitidos"}
+        
+        # Verifica se email existe
+        existing = await conn.fetchval("SELECT id FROM users WHERE email = $1", email)
+        if existing:
+            await conn.close()
+            return {"error": "Email já cadastrado"}
+        
+        # Cria admin
+        hashed_pw = hash_password(password)
+        
+        await conn.execute("""
+            INSERT INTO users (email, name, password_hash, role, created_at)
+            VALUES ($1, $2, $3, 'admin', CURRENT_TIMESTAMP)
+        """, email, name, hashed_pw)
+        
+        await conn.close()
+        
+        return {
+            "success": True,
+            "message": f"Admin {admin_count + 1}/2 criado: {email}"
+        }
+        
+    except Exception as e:
+        return {"error": f"Erro ao criar admin: {str(e)}"}
 
 @app.post("/api/payments/create-preference")
 async def create_preference(payment_data: PaymentRequest):
