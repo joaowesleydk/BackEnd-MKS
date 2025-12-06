@@ -21,30 +21,41 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 def authenticate_user(db: Session, email: str, password: str):
     try:
-        user = get_user_by_email(db, email)
-        if not user:
-            return False
+        # Busca usuário diretamente no banco para evitar problemas de ORM
+        result = db.execute(text("""
+            SELECT id, email, name, hashed_password, is_active, created_at, role
+            FROM users WHERE email = :email AND is_active = true
+        """), {"email": email})
         
-        # Tenta acessar hashed_password ou password_hash
-        password_hash = None
-        if hasattr(user, 'hashed_password') and user.hashed_password:
-            password_hash = user.hashed_password
-        elif hasattr(user, 'password_hash') and user.password_hash:
-            password_hash = user.password_hash
-        else:
-            # Busca diretamente no banco se não encontrar no objeto
+        row = result.fetchone()
+        if not row:
+            # Tenta com password_hash se hashed_password não existir
             result = db.execute(text("""
-                SELECT hashed_password FROM users WHERE email = :email
-                UNION ALL
-                SELECT password_hash FROM users WHERE email = :email
+                SELECT id, email, name, password_hash as hashed_password, is_active, created_at, 'user' as role
+                FROM users WHERE email = :email AND is_active = true
             """), {"email": email})
             row = result.fetchone()
-            if row:
-                password_hash = row[0]
         
-        if not password_hash or not verify_password(password, password_hash):
+        if not row:
             return False
+        
+        # Cria objeto User manualmente
+        from app.models.models import User
+        user = User()
+        user.id = row[0]
+        user.email = row[1]
+        user.name = row[2]
+        user.hashed_password = row[3]
+        user.is_active = row[4] if row[4] is not None else True
+        user.created_at = row[5]
+        user.role = row[6] if len(row) > 6 and row[6] else "user"
+        
+        # Verifica senha
+        if not user.hashed_password or not verify_password(password, user.hashed_password):
+            return False
+            
         return user
+        
     except Exception as e:
         print(f"Erro na autenticação: {e}")
         return False
@@ -102,23 +113,34 @@ def get_admin_user(current_user: User = Depends(get_current_user), db: Session =
 def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     """Login com email e senha em JSON"""
     try:
+        # Debug: log da tentativa de login
+        print(f"Tentativa de login para: {login_data.email}")
+        
         user = authenticate_user(db, login_data.email, login_data.password)
         if not user:
+            print(f"Falha na autenticação para: {login_data.email}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Email ou senha incorretos",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
+        print(f"Usuário autenticado: {user.email}")
+        
         access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
         access_token = create_access_token(
             data={"sub": user.email}, expires_delta=access_token_expires
         )
+        
+        print(f"Token criado com sucesso para: {user.email}")
         return {"access_token": access_token, "token_type": "bearer"}
         
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Erro detalhado no login: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro interno no login: {str(e)}"
@@ -286,6 +308,40 @@ def get_google_config():
         "redirect_uri": os.getenv("GOOGLE_REDIRECT_URI", "")
     }
 
+@router.get("/debug-login")
+def debug_login(email: str, db: Session = Depends(get_db)):
+    """Debug para verificar problemas de login"""
+    try:
+        # Verifica se usuário existe
+        result = db.execute(text("SELECT id, email, hashed_password, is_active FROM users WHERE email = :email"), {"email": email})
+        user_data = result.fetchone()
+        
+        if not user_data:
+            # Tenta com password_hash
+            result = db.execute(text("SELECT id, email, password_hash, is_active FROM users WHERE email = :email"), {"email": email})
+            user_data = result.fetchone()
+        
+        if user_data:
+            return {
+                "user_found": True,
+                "user_id": user_data[0],
+                "email": user_data[1],
+                "has_password": bool(user_data[2]),
+                "is_active": user_data[3],
+                "password_length": len(user_data[2]) if user_data[2] else 0
+            }
+        else:
+            return {
+                "user_found": False,
+                "message": "Usuário não encontrado"
+            }
+            
+    except Exception as e:
+        return {
+            "error": str(e),
+            "message": "Erro ao buscar usuário"
+        }
+
 # ============================================================================
 # SETUP E ADMIN
 # ============================================================================
@@ -306,19 +362,36 @@ def test_database(db: Session = Depends(get_db)):
         
         columns = [row[0] for row in columns_result]
         
+        # Testa busca de usuário específico
+        test_user = None
+        try:
+            result = db.execute(text("SELECT email, hashed_password FROM users WHERE email = 'joaodkind@gmail.com'")).fetchone()
+            if result:
+                test_user = {"email": result[0], "has_password": bool(result[1])}
+        except:
+            try:
+                result = db.execute(text("SELECT email, password_hash FROM users WHERE email = 'joaodkind@gmail.com'")).fetchone()
+                if result:
+                    test_user = {"email": result[0], "has_password": bool(result[1])}
+            except:
+                pass
+        
         return {
             "database_connected": True,
             "users_count": user_count,
             "columns_found": columns,
             "role_column_exists": 'role' in columns,
             "password_columns": [col for col in columns if 'password' in col],
+            "test_user": test_user,
             "message": "Banco funcionando!" if 'role' in columns else "Execute /setup-database para configurar"
         }
         
     except Exception as e:
+        import traceback
         return {
             "database_connected": False,
             "error": str(e),
+            "traceback": traceback.format_exc(),
             "message": "Erro na conexão com banco"
         }
 
