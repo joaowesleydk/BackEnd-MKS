@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Novo Pedido - MKS Store</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+        .order-box { background: white; padding: 20px; margin: 15px 0; border-radius: 8px; border-left: 4px solid #ff6b6b; }
+        .customer-box { background: #fff5f5; padding: 15px; margin: 15px 0; border-radius: 8px; }
+        .item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .total { font-weight: bold; font-size: 18px; color: #ff6b6b; text-align: right; margin-top: 15px; }
+        .urgent { background: #ff6b6b; color: white; padding: 10px; text-align: center; border-radius: 8px; margin: 15px 0; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔔 Novo Pedido Recebido!</h1>
+        <p>Um cliente acabou de fazer um pedido</p>
+    </div>
+    
+    <div class="content">
+        <div class="urgent">
+            ⚡ AÇÃO NECESSÁRIA: Processar pedido #{{ orderId }}
+        </div>
+        
+        <div class="customer-box">
+            <h3>👤 Dados do Cliente:</h3>
+            <p><strong>Nome:</strong> {{ customerName }}</p>
+            <p><strong>Email:</strong> {{ customerEmail }}</p>
+        </div>
+        
+        <div class="order-box">
+            <h2>Pedido #{{ orderId }}</h2>
+            
+            <h3>Itens Pedidos:</h3>
+            {% for item in items %}
+            <div class="item">
+                <span>{{ item.name }} ({{ item.quantity }}x)</span>
+                <span>R$ {{ "%.2f"|format(item.price * item.quantity) }}</span>
+            </div>
+            {% endfor %}
+            
+            <div class="total">
+                Total: R$ {{ "%.2f"|format(total) }}
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Acesse o painel administrativo para processar este pedido</p>
+            <p>Responda para o cliente em: {{ customerEmail }}</p>
+        </div>
+    </div>
+</body>
+</html>

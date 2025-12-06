@@ -21,3 +21,11 @@ services:
         value: sua_cloudinary_key
       - key: CLOUDINARY_API_SECRET
         value: seu_cloudinary_secret
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        value: karinamodastore@gmail.com
+      - key: SMTP_PASSWORD
+        value: sua_senha_app_gmail_aqui

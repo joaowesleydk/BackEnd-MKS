@@ -8,8 +8,10 @@ import os
 from datetime import datetime, timedelta
 import requests
 import base64
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from fastapi import Depends
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
+from jinja2 import Environment, FileSystemLoader
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 import replicate
@@ -33,6 +35,28 @@ REPLICATE_API_TOKEN = os.getenv('REPLICATE_API_TOKEN')
 
 if REPLICATE_API_TOKEN:
     os.environ['REPLICATE_API_TOKEN'] = REPLICATE_API_TOKEN
+
+# Email Config
+SMTP_HOST = os.getenv('SMTP_HOST', 'smtp.gmail.com')
+SMTP_PORT = int(os.getenv('SMTP_PORT', 587))
+SMTP_USER = os.getenv('SMTP_USER', 'karinamodastore@gmail.com')
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
+
+# Email configuration
+conf = ConnectionConfig(
+    MAIL_USERNAME=SMTP_USER,
+    MAIL_PASSWORD=SMTP_PASSWORD,
+    MAIL_FROM=SMTP_USER,
+    MAIL_PORT=SMTP_PORT,
+    MAIL_SERVER=SMTP_HOST,
+    MAIL_STARTTLS=True,
+    MAIL_SSL_TLS=False,
+    USE_CREDENTIALS=True,
+    VALIDATE_CERTS=True
+)
+
+fastmail = FastMail(conf)
+jinja_env = Environment(loader=FileSystemLoader('templates'))
 
 # Schemas
 class LoginRequest(BaseModel):
@@ -62,6 +86,29 @@ class VirtualTryOnRequest(BaseModel):
 
 class GoogleAuthRequest(BaseModel):
     credential: str
+
+class ContactEmailRequest(BaseModel):
+    name: str
+    email: EmailStr
+    phone: str = ""
+    subject: str
+    message: str
+
+class OrderConfirmationRequest(BaseModel):
+    customerName: str
+    customerEmail: EmailStr
+    orderId: str
+    items: List[Dict[str, Any]]
+    total: float
+    shippingAddress: Dict[str, str]
+    paymentMethod: str
+
+class NewOrderRequest(BaseModel):
+    orderId: str
+    customerName: str
+    customerEmail: EmailStr
+    items: List[Dict[str, Any]]
+    total: float
 
 # Database
 async def get_db():
@@ -505,6 +552,99 @@ async def create_admin(email: str, name: str, password: str):
         
     except Exception as e:
         return {"error": f"Erro ao criar admin: {str(e)}"}
+
+# Email endpoints
+@app.post("/api/email/contact")
+async def send_contact_email(contact_data: ContactEmailRequest):
+    """Envia email de contato para a loja"""
+    try:
+        template = jinja_env.get_template('contact.html')
+        html_content = template.render(
+            name=contact_data.name,
+            email=contact_data.email,
+            phone=contact_data.phone,
+            subject=contact_data.subject,
+            message=contact_data.message,
+            timestamp=datetime.now().strftime("%d/%m/%Y %H:%M")
+        )
+        
+        message = MessageSchema(
+            subject=f"Novo Contato - {contact_data.subject}",
+            recipients=["karinamodastore@gmail.com"],
+            body=html_content,
+            subtype=MessageType.html
+        )
+        
+        await fastmail.send_message(message)
+        
+        return {
+            "success": True,
+            "message": "Email de contato enviado com sucesso!"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao enviar email: {str(e)}")
+
+@app.post("/api/email/order-confirmation")
+async def send_order_confirmation(order_data: OrderConfirmationRequest):
+    """Envia confirmação de pedido para o cliente"""
+    try:
+        template = jinja_env.get_template('order-confirmation.html')
+        html_content = template.render(
+            customerName=order_data.customerName,
+            orderId=order_data.orderId,
+            items=order_data.items,
+            total=order_data.total,
+            shippingAddress=order_data.shippingAddress,
+            paymentMethod=order_data.paymentMethod
+        )
+        
+        message = MessageSchema(
+            subject=f"Pedido Confirmado #{order_data.orderId} - MKS Store",
+            recipients=[order_data.customerEmail],
+            body=html_content,
+            subtype=MessageType.html
+        )
+        
+        await fastmail.send_message(message)
+        
+        return {
+            "success": True,
+            "message": "Email de confirmação enviado com sucesso!"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao enviar email: {str(e)}")
+
+@app.post("/api/email/new-order")
+async def send_new_order_notification(order_data: NewOrderRequest):
+    """Envia notificação de novo pedido para a loja"""
+    try:
+        template = jinja_env.get_template('new-order.html')
+        html_content = template.render(
+            orderId=order_data.orderId,
+            customerName=order_data.customerName,
+            customerEmail=order_data.customerEmail,
+            items=order_data.items,
+            total=order_data.total
+        )
+        
+        message = MessageSchema(
+            subject=f"Novo Pedido #{order_data.orderId} - MKS Store",
+            recipients=["karinamodastore@gmail.com"],
+            body=html_content,
+            subtype=MessageType.html
+        )
+        
+        await fastmail.send_message(message)
+        
+        return {
+            "success": True,
+            "message": "Notificação de novo pedido enviada com sucesso!"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao enviar email: {str(e)}")
 
 @app.post("/api/payments/create-preference")
 async def create_preference(payment_data: PaymentRequest):
