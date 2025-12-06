@@ -1,6 +1,10 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from uuid import uuid4
+import os
+import shutil
 from app.core.database import get_db
 from app.crud.crud import get_products, get_product, create_product, get_categories, create_category
 from app.schemas.schemas import Product, ProductCreate, Category, CategoryCreate, User
@@ -112,6 +116,83 @@ def create_product_frontend(
         db.rollback()
         return {"error": f"Erro: {str(e)}"}
 
+@router.post("/frontend-create-with-file")
+async def create_product_with_file(
+    name: str = Form(...),
+    price: float = Form(...),
+    category: str = Form(...),
+    description: str = Form(""),
+    promocao: bool = Form(False),
+    imagemFile: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_admin_user)
+):
+    """Cadastra produto com upload de imagem"""
+    try:
+        # Validar arquivo de imagem
+        if not imagemFile.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="Arquivo deve ser uma imagem")
+        
+        # Validar tamanho (máximo 5MB)
+        contents = await imagemFile.read()
+        if len(contents) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Imagem muito grande. Máximo 5MB")
+        
+        # Gerar nome único para o arquivo
+        file_extension = imagemFile.filename.split('.')[-1] if '.' in imagemFile.filename else 'jpg'
+        unique_filename = f"{uuid4()}.{file_extension}"
+        
+        # Salvar arquivo no diretório de uploads
+        upload_dir = "uploads/products"
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, unique_filename)
+        
+        with open(file_path, "wb") as buffer:
+            buffer.write(contents)
+        
+        # URL da imagem para salvar no banco
+        image_url = f"/uploads/products/{unique_filename}"
+        
+        # Buscar categoria
+        from app.models.models import Category
+        category_obj = None
+        if category:
+            category_obj = db.query(Category).filter(Category.name.ilike(category)).first()
+        
+        # Criar produto no banco
+        product_data = ProductCreate(
+            name=name,
+            description=description,
+            price=price,
+            image_url=image_url,
+            stock=100,
+            category_id=category_obj.id if category_obj else None
+        )
+        
+        new_product = create_product(db=db, product=product_data)
+        
+        return {
+            "success": True,
+            "message": "Produto criado com sucesso",
+            "produto": {
+                "name": name,
+                "price": price,
+                "category": category,
+                "image": image_url,
+                "description": description,
+                "promocao": promocao
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        # Remove arquivo se houve erro
+        if 'file_path' in locals() and os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
 # ============================================================================
 # ENDPOINTS ADMINISTRATIVOS (formato padrão)
 # ============================================================================
@@ -164,3 +245,16 @@ def create_new_category(
 ):
     """Cria nova categoria"""
     return create_category(db=db, category=category)
+
+# ============================================================================
+# ENDPOINTS PARA SERVIR IMAGENS
+# ============================================================================
+
+@router.get("/uploads/products/{filename}")
+async def get_product_image(filename: str):
+    """Serve arquivos de imagem dos produtos"""
+    file_path = f"uploads/products/{filename}"
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    
+    return FileResponse(file_path)

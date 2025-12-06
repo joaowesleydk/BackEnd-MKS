@@ -22,7 +22,27 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 def authenticate_user(db: Session, email: str, password: str):
     try:
         user = get_user_by_email(db, email)
-        if not user or not verify_password(password, user.hashed_password):
+        if not user:
+            return False
+        
+        # Tenta acessar hashed_password ou password_hash
+        password_hash = None
+        if hasattr(user, 'hashed_password') and user.hashed_password:
+            password_hash = user.hashed_password
+        elif hasattr(user, 'password_hash') and user.password_hash:
+            password_hash = user.password_hash
+        else:
+            # Busca diretamente no banco se não encontrar no objeto
+            result = db.execute(text("""
+                SELECT hashed_password FROM users WHERE email = :email
+                UNION ALL
+                SELECT password_hash FROM users WHERE email = :email
+            """), {"email": email})
+            row = result.fetchone()
+            if row:
+                password_hash = row[0]
+        
+        if not password_hash or not verify_password(password, password_hash):
             return False
         return user
     except Exception as e:
@@ -277,18 +297,22 @@ def test_database(db: Session = Depends(get_db)):
         # Testa conexão
         user_count = db.execute(text("SELECT COUNT(*) FROM users")).scalar()
         
-        # Verifica se coluna role existe
-        role_exists = db.execute(text("""
+        # Verifica colunas existentes
+        columns_result = db.execute(text("""
             SELECT column_name 
             FROM information_schema.columns 
-            WHERE table_name='users' AND column_name='role'
-        """)).fetchone()
+            WHERE table_name='users' AND column_name IN ('role', 'hashed_password', 'password_hash')
+        """)).fetchall()
+        
+        columns = [row[0] for row in columns_result]
         
         return {
             "database_connected": True,
             "users_count": user_count,
-            "role_column_exists": bool(role_exists),
-            "message": "Banco funcionando!" if role_exists else "Execute /setup-database para configurar"
+            "columns_found": columns,
+            "role_column_exists": 'role' in columns,
+            "password_columns": [col for col in columns if 'password' in col],
+            "message": "Banco funcionando!" if 'role' in columns else "Execute /setup-database para configurar"
         }
         
     except Exception as e:
@@ -300,29 +324,44 @@ def test_database(db: Session = Depends(get_db)):
 
 @router.post("/setup-database")
 def setup_database(db: Session = Depends(get_db)):
-    """Configura banco adicionando coluna role"""
+    """Configura banco adicionando coluna role e padronizando senha"""
     try:
-        # Verifica se coluna existe
-        result = db.execute(text("""
+        # Verifica se coluna role existe
+        role_result = db.execute(text("""
             SELECT column_name 
             FROM information_schema.columns 
             WHERE table_name='users' AND column_name='role'
         """))
         
-        if result.fetchone():
-            # Garante que todos os usuários tenham role definido
-            db.execute(text("UPDATE users SET role = 'user' WHERE role IS NULL OR role = ''"))
-            db.commit()
-            return {"message": "Banco já configurado e atualizado!"}
+        # Verifica qual coluna de senha existe
+        password_columns = db.execute(text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name IN ('hashed_password', 'password_hash')
+        """)).fetchall()
         
-        # Adiciona coluna role
-        db.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'user'"))
-        db.execute(text("UPDATE users SET role = 'user' WHERE role IS NULL OR role = ''"))
+        password_column_names = [row[0] for row in password_columns]
+        
+        # Adiciona coluna role se não existir
+        if not role_result.fetchone():
+            db.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'user'"))
+            db.execute(text("UPDATE users SET role = 'user' WHERE role IS NULL OR role = ''"))
+        
+        # Padroniza coluna de senha para hashed_password
+        if 'password_hash' in password_column_names and 'hashed_password' not in password_column_names:
+            db.execute(text("ALTER TABLE users RENAME COLUMN password_hash TO hashed_password"))
+        elif 'password_hash' in password_column_names and 'hashed_password' in password_column_names:
+            # Se ambas existem, copia dados e remove password_hash
+            db.execute(text("UPDATE users SET hashed_password = password_hash WHERE hashed_password IS NULL"))
+            db.execute(text("ALTER TABLE users DROP COLUMN password_hash"))
+        
         db.commit()
         
         return {
             "success": True,
-            "message": "Banco configurado com sucesso! Coluna 'role' adicionada."
+            "message": "Banco configurado com sucesso!",
+            "password_columns_found": password_column_names,
+            "role_added": True
         }
         
     except Exception as e:

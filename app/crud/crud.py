@@ -12,25 +12,36 @@ def get_user_by_email(db: Session, email: str):
         # Tenta usar SQLAlchemy ORM primeiro
         return db.query(User).filter(User.email == email).first()
     except Exception:
-        # Se falhar (coluna role não existe), usa SQL direto
+        # Se falhar, usa SQL direto com ambos os nomes de campo possíveis
         try:
+            # Primeiro tenta com hashed_password
             result = db.execute(text("""
                 SELECT id, email, name, hashed_password, is_active, created_at
                 FROM users WHERE email = :email
             """), {"email": email})
             row = result.fetchone()
+            
+            if not row:
+                # Se não encontrar, tenta com password_hash
+                result = db.execute(text("""
+                    SELECT id, email, name, password_hash, is_active, created_at
+                    FROM users WHERE email = :email
+                """), {"email": email})
+                row = result.fetchone()
+            
             if row:
                 user = User()
                 user.id = row[0]
                 user.email = row[1] 
                 user.name = row[2]
-                user.hashed_password = row[3]
+                user.hashed_password = row[3]  # Sempre usa hashed_password no objeto
                 user.is_active = row[4] if row[4] is not None else True
                 user.created_at = row[5]
                 user.role = "user"  # Define role padrão
                 return user
             return None
-        except Exception:
+        except Exception as e:
+            print(f"Erro ao buscar usuário: {e}")
             return None
 
 def create_user(db: Session, user: UserCreate):
