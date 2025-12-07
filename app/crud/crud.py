@@ -188,3 +188,27 @@ def clear_cart(db: Session, user_id: int):
     db.query(CartItem).filter(CartItem.cart_id == cart.id).delete()
     db.commit()
     return cart
+
+def update_product(db: Session, product_id: int, product: ProductCreate):
+    db_product = db.query(Product).filter(Product.id == product_id).first()
+    if db_product:
+        for key, value in product.dict().items():
+            setattr(db_product, key, value)
+        db.commit()
+        db.refresh(db_product)
+    return db_product
+
+def delete_product(db: Session, product_id: int):
+    db_product = db.query(Product).filter(Product.id == product_id).first()
+    if db_product:
+        db_product.is_active = False
+        db.commit()
+    return db_product
+
+def delete_product_permanent(db: Session, product_id: int):
+    db_product = db.query(Product).filter(Product.id == product_id).first()
+    if db_product:
+        db.delete(db_product)
+        db.commit()
+        return True
+    return False

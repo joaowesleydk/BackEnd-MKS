@@ -228,6 +228,64 @@ def create_new_product(
     """Cria produto (formato admin)"""
     return create_product(db=db, product=product)
 
+@router.put("/{product_id}", response_model=Product)
+def update_product(
+    product_id: int,
+    product: ProductCreate,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_admin_user)
+):
+    """Atualiza produto"""
+    db_product = get_product(db, product_id=product_id)
+    if not db_product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    
+    for key, value in product.dict().items():
+        setattr(db_product, key, value)
+    
+    db.commit()
+    db.refresh(db_product)
+    return db_product
+
+@router.delete("/{product_id}")
+def delete_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_admin_user)
+):
+    """Deleta produto (soft delete)"""
+    db_product = get_product(db, product_id=product_id)
+    if not db_product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    
+    # Soft delete - marca como inativo
+    db_product.is_active = False
+    db.commit()
+    
+    return {"message": "Produto deletado com sucesso"}
+
+@router.delete("/{product_id}/permanent")
+def delete_product_permanent(
+    product_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_admin_user)
+):
+    """Deleta produto permanentemente"""
+    db_product = db.query(Product).filter(Product.id == product_id).first()
+    if not db_product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    
+    # Remove arquivo de imagem se existir
+    if db_product.image_url and db_product.image_url.startswith('/uploads/'):
+        file_path = db_product.image_url[1:]  # Remove a barra inicial
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    
+    db.delete(db_product)
+    db.commit()
+    
+    return {"message": "Produto deletado permanentemente"}
+
 # ============================================================================
 # ENDPOINTS DE CATEGORIAS
 # ============================================================================
@@ -245,6 +303,48 @@ def create_new_category(
 ):
     """Cria nova categoria"""
     return create_category(db=db, category=category)
+
+@router.put("/categories/{category_id}", response_model=Category)
+def update_category(
+    category_id: int,
+    category: CategoryCreate,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_admin_user)
+):
+    """Atualiza categoria"""
+    from app.models.models import Category
+    db_category = db.query(Category).filter(Category.id == category_id).first()
+    if not db_category:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+    
+    for key, value in category.dict().items():
+        setattr(db_category, key, value)
+    
+    db.commit()
+    db.refresh(db_category)
+    return db_category
+
+@router.delete("/categories/{category_id}")
+def delete_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_admin_user)
+):
+    """Deleta categoria"""
+    from app.models.models import Category
+    db_category = db.query(Category).filter(Category.id == category_id).first()
+    if not db_category:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+    
+    # Verifica se há produtos usando esta categoria
+    products_count = db.query(Product).filter(Product.category_id == category_id, Product.is_active == True).count()
+    if products_count > 0:
+        raise HTTPException(status_code=400, detail=f"Não é possível deletar. Categoria possui {products_count} produtos ativos")
+    
+    db.delete(db_category)
+    db.commit()
+    
+    return {"message": "Categoria deletada com sucesso"}
 
 # ============================================================================
 # ENDPOINTS PARA SERVIR IMAGENS
