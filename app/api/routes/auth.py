@@ -120,17 +120,28 @@ def get_admin_user(current_user: User = Depends(get_current_user), db: Session =
 def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     """Login com email e senha em JSON"""
     try:
-        # Busca usuário diretamente
-        user_query = db.execute(text("""
-            SELECT id, email, name, 
-                   COALESCE(hashed_password, password_hash) as password,
-                   COALESCE(is_active, true) as active
-            FROM users WHERE email = :email
-        """), {"email": login_data.email})
+        # Tenta com hashed_password primeiro
+        try:
+            user_query = db.execute(text("""
+                SELECT id, email, name, hashed_password, is_active
+                FROM users WHERE email = :email
+            """), {"email": login_data.email})
+            user_row = user_query.fetchone()
+        except:
+            user_row = None
         
-        user_row = user_query.fetchone()
+        # Se não encontrou, tenta com password_hash
+        if not user_row:
+            try:
+                user_query = db.execute(text("""
+                    SELECT id, email, name, password_hash, is_active
+                    FROM users WHERE email = :email
+                """), {"email": login_data.email})
+                user_row = user_query.fetchone()
+            except:
+                user_row = None
         
-        if not user_row or not user_row[4]:
+        if not user_row:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Email ou senha incorretos"
