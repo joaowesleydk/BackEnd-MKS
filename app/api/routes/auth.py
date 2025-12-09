@@ -116,59 +116,29 @@ def get_admin_user(current_user: User = Depends(get_current_user), db: Session =
 # ENDPOINTS PRINCIPAIS
 # ============================================================================
 
-@router.post("/login")
-def login(login_data: LoginRequest, db: Session = Depends(get_db)):
-    """Login com email e senha em JSON"""
-    try:
-        # Tenta com hashed_password primeiro
-        try:
-            user_query = db.execute(text("""
-                SELECT id, email, name, hashed_password, is_active
-                FROM users WHERE email = :email
-            """), {"email": login_data.email})
-            user_row = user_query.fetchone()
-        except:
-            user_row = None
-        
-        # Se não encontrou, tenta com password_hash
-        if not user_row:
-            try:
-                user_query = db.execute(text("""
-                    SELECT id, email, name, password_hash, is_active
-                    FROM users WHERE email = :email
-                """), {"email": login_data.email})
-                user_row = user_query.fetchone()
-            except:
-                user_row = None
-        
-        if not user_row:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Email ou senha incorretos"
-            )
-        
-        # Verifica senha
-        if not verify_password(login_data.password, user_row[3]):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Email ou senha incorretos"
-            )
-        
-        # Cria token
-        access_token = create_access_token(
-            data={"sub": user_row[1]}, 
-            expires_delta=timedelta(minutes=30)
-        )
-        
-        return {"access_token": access_token, "token_type": "bearer"}
-        
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Erro no servidor"
-        )
+@router.post("/login-new")
+def login_new(request: dict, db: Session = Depends(get_db)):
+    """Login novo e simples"""
+    email = request.get("email")
+    password = request.get("password")
+    
+    # Busca todas as colunas
+    result = db.execute(text("SELECT id, email, name, hashed_password FROM users WHERE email = :email"), {"email": email})
+    user = result.fetchone()
+    
+    if not user:
+        # Tenta com password_hash
+        result = db.execute(text("SELECT id, email, name, password_hash FROM users WHERE email = :email"), {"email": email})
+        user = result.fetchone()
+    
+    if not user:
+        return {"error": "Usuário não encontrado"}
+    
+    if not verify_password(password, user[3]):
+        return {"error": "Senha incorreta"}
+    
+    token = create_access_token(data={"sub": email})
+    return {"access_token": token, "token_type": "bearer"}
 
 
 
