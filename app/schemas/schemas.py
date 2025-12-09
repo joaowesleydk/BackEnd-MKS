@@ -86,7 +86,7 @@ class Order(BaseModel):
         from_attributes = True
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 class Token(BaseModel):
