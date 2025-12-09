@@ -21,20 +21,27 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 def authenticate_user(db: Session, email: str, password: str):
     try:
-        # Busca usuário diretamente no banco para evitar problemas de ORM
-        result = db.execute(text("""
-            SELECT id, email, name, hashed_password, is_active, created_at, role
-            FROM users WHERE email = :email AND is_active = true
-        """), {"email": email})
+        # Verifica quais colunas existem
+        columns_result = db.execute(text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name IN ('hashed_password', 'password_hash', 'role')
+        """)).fetchall()
         
+        columns = [row[0] for row in columns_result]
+        
+        # Define qual coluna de senha usar
+        password_col = 'hashed_password' if 'hashed_password' in columns else 'password_hash'
+        role_col = 'role' if 'role' in columns else "'user' as role"
+        
+        # Busca usuário
+        query = f"""
+            SELECT id, email, name, {password_col}, is_active, created_at, {role_col}
+            FROM users WHERE email = :email AND is_active = true
+        """
+        
+        result = db.execute(text(query), {"email": email})
         row = result.fetchone()
-        if not row:
-            # Tenta com password_hash se hashed_password não existir
-            result = db.execute(text("""
-                SELECT id, email, name, password_hash as hashed_password, is_active, created_at, 'user' as role
-                FROM users WHERE email = :email AND is_active = true
-            """), {"email": email})
-            row = result.fetchone()
         
         if not row:
             return False

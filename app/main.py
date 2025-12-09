@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import os
-from app.api.routes import products, users, orders, auth, cart, upload, payments
+from app.api.routes import products, users, orders, auth, cart, upload, payments, virtual_tryon
 from app.core.database import engine
 from app.models import models
 
@@ -26,6 +26,7 @@ app.include_router(orders.router, prefix="/api/orders", tags=["orders"])
 app.include_router(cart.router, prefix="/api/cart", tags=["cart"])
 app.include_router(upload.router, prefix="/api/upload", tags=["upload"])
 app.include_router(payments.router, prefix="/api/payments", tags=["payments"])
+app.include_router(virtual_tryon.router, prefix="/api", tags=["virtual-tryon"])
 
 # Criar diretório de uploads se não existir
 os.makedirs("uploads/products", exist_ok=True)
