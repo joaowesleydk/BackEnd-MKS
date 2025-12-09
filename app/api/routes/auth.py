@@ -21,21 +21,27 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 def authenticate_user(db: Session, email: str, password: str):
     try:
-        # Tenta primeiro com hashed_password
-        result = db.execute(text("""
-            SELECT id, email, name, hashed_password, is_active, created_at
-            FROM users WHERE email = :email
-        """), {"email": email})
+        # Verifica quais colunas existem na tabela
+        columns = db.execute(text("""
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name='users' AND column_name IN ('hashed_password', 'password_hash')
+        """)).fetchall()
         
+        password_column = None
+        for col in columns:
+            if col[0] == 'hashed_password':
+                password_column = 'hashed_password'
+                break
+            elif col[0] == 'password_hash':
+                password_column = 'password_hash'
+        
+        if not password_column:
+            return False
+        
+        # Busca usuário com a coluna correta
+        query = f"SELECT id, email, name, {password_column}, is_active, created_at FROM users WHERE email = :email"
+        result = db.execute(text(query), {"email": email})
         row = result.fetchone()
-        
-        if not row:
-            # Tenta com password_hash
-            result = db.execute(text("""
-                SELECT id, email, name, password_hash, is_active, created_at
-                FROM users WHERE email = :email
-            """), {"email": email})
-            row = result.fetchone()
         
         if not row or not row[4]:  # Verifica se usuário existe e está ativo
             return False
@@ -57,7 +63,8 @@ def authenticate_user(db: Session, email: str, password: str):
         
         return SimpleUser()
         
-    except Exception:
+    except Exception as e:
+        print(f"Erro na autenticação: {e}")
         return False
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
