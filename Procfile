@@ -1,1 +1,0 @@
-web: python fastapi_production.py
