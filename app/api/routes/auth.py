@@ -21,50 +21,43 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 def authenticate_user(db: Session, email: str, password: str):
     try:
-        # Verifica quais colunas existem
-        columns_result = db.execute(text("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name='users' AND column_name IN ('hashed_password', 'password_hash', 'role')
-        """)).fetchall()
+        # Tenta primeiro com hashed_password
+        result = db.execute(text("""
+            SELECT id, email, name, hashed_password, is_active, created_at
+            FROM users WHERE email = :email
+        """), {"email": email})
         
-        columns = [row[0] for row in columns_result]
-        
-        # Define qual coluna de senha usar
-        password_col = 'hashed_password' if 'hashed_password' in columns else 'password_hash'
-        role_col = 'role' if 'role' in columns else "'user' as role"
-        
-        # Busca usuário
-        query = f"""
-            SELECT id, email, name, {password_col}, is_active, created_at, {role_col}
-            FROM users WHERE email = :email AND is_active = true
-        """
-        
-        result = db.execute(text(query), {"email": email})
         row = result.fetchone()
         
         if not row:
-            return False
+            # Tenta com password_hash
+            result = db.execute(text("""
+                SELECT id, email, name, password_hash, is_active, created_at
+                FROM users WHERE email = :email
+            """), {"email": email})
+            row = result.fetchone()
         
-        # Cria objeto User manualmente
-        from app.models.models import User
-        user = User()
-        user.id = row[0]
-        user.email = row[1]
-        user.name = row[2]
-        user.hashed_password = row[3]
-        user.is_active = row[4] if row[4] is not None else True
-        user.created_at = row[5]
-        user.role = row[6] if len(row) > 6 and row[6] else "user"
+        if not row or not row[4]:  # Verifica se usuário existe e está ativo
+            return False
         
         # Verifica senha
-        if not user.hashed_password or not verify_password(password, user.hashed_password):
+        if not row[3] or not verify_password(password, row[3]):
             return False
-            
-        return user
         
-    except Exception as e:
-        print(f"Erro na autenticação: {e}")
+        # Cria objeto simples
+        class SimpleUser:
+            def __init__(self):
+                self.id = row[0]
+                self.email = row[1]
+                self.name = row[2]
+                self.hashed_password = row[3]
+                self.is_active = row[4]
+                self.created_at = row[5]
+                self.role = "user"
+        
+        return SimpleUser()
+        
+    except Exception:
         return False
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
@@ -116,41 +109,30 @@ def get_admin_user(current_user: User = Depends(get_current_user), db: Session =
 # ENDPOINTS PRINCIPAIS
 # ============================================================================
 
-@router.post("/login", response_model=Token)
+@router.post("/login")
 def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     """Login com email e senha em JSON"""
     try:
-        # Debug: log da tentativa de login
-        print(f"Tentativa de login para: {login_data.email}")
-        
         user = authenticate_user(db, login_data.email, login_data.password)
         if not user:
-            print(f"Falha na autenticação para: {login_data.email}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Email ou senha incorretos",
-                headers={"WWW-Authenticate": "Bearer"},
+                detail="Email ou senha incorretos"
             )
-        
-        print(f"Usuário autenticado: {user.email}")
         
         access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
         access_token = create_access_token(
             data={"sub": user.email}, expires_delta=access_token_expires
         )
         
-        print(f"Token criado com sucesso para: {user.email}")
         return {"access_token": access_token, "token_type": "bearer"}
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Erro detalhado no login: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro interno no login: {str(e)}"
+            detail="Erro interno no login"
         )
 
 

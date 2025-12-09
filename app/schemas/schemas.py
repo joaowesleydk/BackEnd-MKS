@@ -13,8 +13,8 @@ class UserCreate(BaseModel):
 
 class User(UserBase):
     id: int
-    role: str
-    is_active: bool
+    role: str = "user"
+    is_active: bool = True
     created_at: datetime
     
     class Config:
