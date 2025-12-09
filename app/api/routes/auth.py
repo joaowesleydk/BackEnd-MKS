@@ -120,26 +120,43 @@ def get_admin_user(current_user: User = Depends(get_current_user), db: Session =
 def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     """Login com email e senha em JSON"""
     try:
-        user = authenticate_user(db, login_data.email, login_data.password)
-        if not user:
+        # Busca usuário diretamente
+        user_query = db.execute(text("""
+            SELECT id, email, name, 
+                   COALESCE(hashed_password, password_hash) as password,
+                   COALESCE(is_active, true) as active
+            FROM users WHERE email = :email
+        """), {"email": login_data.email})
+        
+        user_row = user_query.fetchone()
+        
+        if not user_row or not user_row[4]:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Email ou senha incorretos"
             )
         
-        access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+        # Verifica senha
+        if not verify_password(login_data.password, user_row[3]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Email ou senha incorretos"
+            )
+        
+        # Cria token
         access_token = create_access_token(
-            data={"sub": user.email}, expires_delta=access_token_expires
+            data={"sub": user_row[1]}, 
+            expires_delta=timedelta(minutes=30)
         )
         
         return {"access_token": access_token, "token_type": "bearer"}
         
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Erro interno no login"
+            detail="Erro no servidor"
         )
 
 
