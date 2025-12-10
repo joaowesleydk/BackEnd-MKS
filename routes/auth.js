@@ -47,16 +47,16 @@ router.post('/register', async (req, res) => {
 
     const token = generateToken(user);
 
-    return successResponse(res, {
+    return res.json({
+      success: true,
       access_token: token,
-      token_type: 'bearer',
       user: {
         id: user.id,
+        name: user.nome,
         email: user.email,
-        nome: user.nome,
         role: user.role
       }
-    }, 'Usuário registrado com sucesso');
+    });
 
   } catch (error) {
     console.error(error);
@@ -84,16 +84,16 @@ router.post('/login', async (req, res) => {
 
     const token = generateToken(user);
 
-    return successResponse(res, {
+    return res.json({
+      success: true,
       access_token: token,
-      token_type: 'bearer',
       user: {
         id: user.id,
+        name: user.nome,
         email: user.email,
-        nome: user.nome,
         role: user.role
       }
-    }, 'Login realizado com sucesso');
+    });
 
   } catch (error) {
     console.error(error);
@@ -131,16 +131,16 @@ router.post('/google', async (req, res) => {
 
     const accessToken = generateToken(user);
 
-    return successResponse(res, {
+    return res.json({
+      success: true,
       access_token: accessToken,
-      token_type: 'bearer',
       user: {
         id: user.id,
+        name: user.nome,
         email: user.email,
-        nome: user.nome,
         role: user.role
       }
-    }, 'Login Google realizado com sucesso');
+    });
 
   } catch (error) {
     console.error(error);
@@ -150,15 +150,15 @@ router.post('/google', async (req, res) => {
 
 // Get Profile
 router.get('/me', authenticateToken, async (req, res) => {
-  return successResponse(res, {
-    id: req.user.id,
-    email: req.user.email,
-    nome: req.user.nome,
-    foto: req.user.foto,
-    bio: req.user.bio,
-    tema_cor: req.user.tema_cor,
-    role: req.user.role
-  }, 'Perfil carregado');
+  return res.json({
+    success: true,
+    user: {
+      id: req.user.id,
+      name: req.user.nome,
+      email: req.user.email,
+      role: req.user.role
+    }
+  });
 });
 
 module.exports = router;
