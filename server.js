@@ -38,14 +38,14 @@ app.get('/', (req, res) => {
   });
 });
 
-app.use('/auth', authRoutes);
-app.use('/produtos', produtosRoutes);
-app.use('/carrinho', carrinhoRoutes);
-app.use('/usuario', usuarioRoutes);
-app.use('/pagamento', pagamentoRoutes);
-app.use('/cep', cepRoutes);
-app.use('/frete', freteRoutes);
-app.use('/webhook', webhookRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/produtos', produtosRoutes);
+app.use('/api/carrinho', carrinhoRoutes);
+app.use('/api/usuario', usuarioRoutes);
+app.use('/api/pagamento', pagamentoRoutes);
+app.use('/api/cep', cepRoutes);
+app.use('/api/frete', freteRoutes);
+app.use('/api/webhook', webhookRoutes);
 
 // Error handler
 app.use((err, req, res, next) => {
