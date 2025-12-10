@@ -6,7 +6,6 @@ from app.models.user import User
 from app.auth import get_current_user
 from app.utils import success_response, error_response
 import base64
-from PIL import Image
 import io
 
 router = APIRouter(prefix="/usuario", tags=["Usuario"])
@@ -54,16 +53,9 @@ async def upload_foto(
     
     try:
         contents = await file.read()
-        image = Image.open(io.BytesIO(contents))
         
-        # Redimensionar se necessário
-        if image.width > 500 or image.height > 500:
-            image.thumbnail((500, 500), Image.Resampling.LANCZOS)
-        
-        # Converter para base64
-        buffer = io.BytesIO()
-        image.save(buffer, format="JPEG", quality=85)
-        image_base64 = f"data:image/jpeg;base64,{base64.b64encode(buffer.getvalue()).decode()}"
+        # Converter para base64 sem processamento
+        image_base64 = f"data:image/jpeg;base64,{base64.b64encode(contents).decode()}"
         
         # Salvar no perfil
         current_user.foto = image_base64
