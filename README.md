@@ -1,6 +1,6 @@
-# Moda Karina Store - Backend
+# Moda Karina Store - Backend Node.js
 
-Backend completo para e-commerce de moda desenvolvido com FastAPI, PostgreSQL e integração com Mercado Pago.
+Backend completo para e-commerce de moda desenvolvido com Node.js, Express, PostgreSQL e integração com Mercado Pago.
 
 ## 🚀 Funcionalidades
 
@@ -9,16 +9,14 @@ Backend completo para e-commerce de moda desenvolvido com FastAPI, PostgreSQL e 
 - **Carrinho**: Sistema de carrinho por usuário
 - **Pedidos**: Checkout com Mercado Pago (PIX, cartão, boleto)
 - **Frete**: Integração ViaCEP e cálculo automático
-- **Provador Virtual**: Upload e processamento de imagens
 - **Webhooks**: Confirmação automática de pagamentos
 
 ## 🛠️ Stack Técnica
 
-- **Python 3.8+**
-- **FastAPI** - Framework web moderno
+- **Node.js 18+**
+- **Express** - Framework web
 - **PostgreSQL** - Banco de dados
-- **SQLAlchemy** - ORM
-- **Alembic** - Migrações
+- **Prisma** - ORM moderno
 - **JWT** - Autenticação
 - **Mercado Pago SDK** - Pagamentos
 - **Google OAuth** - Login social
@@ -33,7 +31,7 @@ cd BackEnd-MKS
 
 2. Instale as dependências:
 ```bash
-pip install -r requirements.txt
+npm install
 ```
 
 3. Configure as variáveis de ambiente:
@@ -44,12 +42,13 @@ cp .env.example .env
 
 4. Execute as migrações:
 ```bash
-alembic upgrade head
+npx prisma migrate deploy
+npx prisma generate
 ```
 
 5. Inicie o servidor:
 ```bash
-uvicorn app.main:app --reload
+npm start
 ```
 
 ## 🔧 Configuração
@@ -62,14 +61,7 @@ JWT_SECRET_KEY=your-secret-key-here
 MERCADOPAGO_ACCESS_TOKEN=your-mercadopago-token
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
-FRONTEND_URL=https://karinamodastore.com.br
 ```
-
-### Banco de Dados
-
-1. Crie um banco PostgreSQL
-2. Configure a DATABASE_URL no .env
-3. Execute: `alembic upgrade head`
 
 ## 📚 API Endpoints
 
@@ -78,56 +70,42 @@ FRONTEND_URL=https://karinamodastore.com.br
 - `POST /auth/login` - Login tradicional
 - `POST /auth/google` - Login com Google
 - `GET /auth/me` - Perfil do usuário
-- `PUT /auth/profile` - Atualizar perfil
 
 ### Produtos
-- `GET /products/` - Listar produtos (com filtros)
-- `GET /products/{id}` - Detalhes do produto
-- `POST /products/` - Criar produto (admin)
-- `PUT /products/{id}` - Atualizar produto (admin)
-- `DELETE /products/{id}` - Deletar produto (admin)
+- `GET /produtos/` - Listar produtos (com filtros)
+- `GET /produtos/{id}` - Detalhes do produto
+- `POST /produtos/` - Criar produto (admin)
+- `PUT /produtos/{id}` - Atualizar produto (admin)
+- `DELETE /produtos/{id}` - Deletar produto (admin)
 
 ### Carrinho
-- `GET /cart/` - Ver carrinho
-- `POST /cart/add` - Adicionar ao carrinho
-- `PUT /cart/{item_id}` - Atualizar quantidade
-- `DELETE /cart/{item_id}` - Remover item
-
-### Pedidos
-- `GET /orders/` - Histórico de pedidos
-- `POST /orders/` - Criar pedido
-- `POST /orders/calculate-shipping` - Calcular frete
+- `GET /carrinho/` - Ver carrinho
+- `POST /carrinho/adicionar` - Adicionar ao carrinho
+- `PUT /carrinho/item/{id}` - Atualizar quantidade
+- `DELETE /carrinho/item/{id}` - Remover item
+- `DELETE /carrinho/limpar` - Limpar carrinho
 
 ### Outros
-- `GET /address/cep/{cep}` - Consultar CEP
-- `POST /virtual-tryon/upload` - Upload para provador
-- `POST /webhooks/mercadopago` - Webhook pagamentos
+- `GET /usuario/perfil` - Perfil do usuário
+- `PUT /usuario/perfil` - Atualizar perfil
+- `POST /usuario/upload-foto` - Upload de foto
+- `POST /pagamento/mercadopago` - Criar pagamento
+- `GET /cep/{cep}` - Consultar CEP
+- `POST /frete/calcular` - Calcular frete
+- `POST /webhook/mercadopago` - Webhook pagamentos
 
-## 🚀 Deploy
+## 🚀 Deploy no Render
 
-### Render
-
-1. Conecte seu repositório no Render
-2. Configure as variáveis de ambiente
-3. Use o comando de build: `pip install -r requirements.txt`
-4. Use o comando de start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+1. **Build Command:** `npm install && npx prisma generate`
+2. **Start Command:** `npm start`
 
 ## 📄 Documentação
 
-Acesse `/docs` para ver a documentação interativa do Swagger.
-
-## 🔒 Segurança
-
-- Senhas hasheadas com bcrypt
-- JWT tokens com expiração
-- CORS configurado
-- Validação de dados com Pydantic
-- Middleware de autenticação
-
-## 🤝 Contribuição
-
-1. Fork o projeto
-2. Crie uma branch para sua feature
-3. Commit suas mudanças
-4. Push para a branch
-5. Abra um Pull Request
+Todas as respostas seguem o padrão:
+```json
+{
+  "success": true/false,
+  "data": {...},
+  "message": "string"
+}
+```

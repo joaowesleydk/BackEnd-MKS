@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String?
+  nome      String
+  foto      String?
+  bio       String?
+  tema_cor  String   @default("#000000")
+  role      String   @default("user")
+  google_id String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cartItems CartItem[]
+  orders    Order[]
+
+  @@map("users")
+}
+
+model Product {
+  id                Int      @id @default(autoincrement())
+  nome              String
+  descricao         String?
+  preco             Float
+  imagens           Json     @default("[]")
+  categoria         String
+  promocao          Boolean  @default(false)
+  preco_promocional Float?
+  estoque           Int      @default(0)
+  is_active         Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  cartItems CartItem[]
+
+  @@map("products")
+}
+
+model CartItem {
+  id         Int @id @default(autoincrement())
+  user_id    Int
+  product_id Int
+  quantidade Int @default(1)
+  createdAt  DateTime @default(now())
+
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@map("cart_items")
+}
+
+model Order {
+  id             Int      @id @default(autoincrement())
+  user_id        Int
+  total          Float
+  frete          Float    @default(0)
+  status         String   @default("pending")
+  payment_id     String?
+  payment_method String?
+  endereco       Json
+  items          Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("orders")
+}
