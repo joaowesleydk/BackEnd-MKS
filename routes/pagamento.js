@@ -1,5 +1,5 @@
 const express = require('express');
-const mercadopago = require('mercadopago');
+const { MercadoPagoConfig, Payment } = require('mercadopago');
 const { PrismaClient } = require('@prisma/client');
 const { successResponse, errorResponse } = require('../utils/responses');
 const { authenticateToken } = require('../middleware/auth');
@@ -7,9 +7,10 @@ const { authenticateToken } = require('../middleware/auth');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-mercadopago.configure({
-  access_token: process.env.MERCADOPAGO_ACCESS_TOKEN
+const client = new MercadoPagoConfig({
+  accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN
 });
+const payment = new Payment(client);
 
 // Criar pagamento Mercado Pago
 router.post('/mercadopago', authenticateToken, async (req, res) => {
@@ -69,7 +70,7 @@ router.post('/mercadopago', authenticateToken, async (req, res) => {
     });
 
     // Criar pagamento no Mercado Pago
-    const payment = {
+    const paymentData = {
       transaction_amount: totalComFrete,
       description: `Pedido Moda Karina Store #${order.id}`,
       payment_method_id: payment_method,
@@ -81,12 +82,12 @@ router.post('/mercadopago', authenticateToken, async (req, res) => {
       notification_url: `https://backend-mks-1.onrender.com/webhook/mercadopago`
     };
 
-    const paymentResponse = await mercadopago.payment.create(payment);
+    const paymentResponse = await payment.create({ body: paymentData });
 
     // Atualizar pedido com payment_id
     await prisma.order.update({
       where: { id: order.id },
-      data: { payment_id: paymentResponse.body.id.toString() }
+      data: { payment_id: paymentResponse.id.toString() }
     });
 
     // Limpar carrinho
@@ -96,7 +97,7 @@ router.post('/mercadopago', authenticateToken, async (req, res) => {
 
     return successResponse(res, {
       order_id: order.id,
-      payment: paymentResponse.body
+      payment: paymentResponse
     }, 'Pagamento criado com sucesso');
 
   } catch (error) {

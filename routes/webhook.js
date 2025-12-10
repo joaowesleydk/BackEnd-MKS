@@ -1,14 +1,15 @@
 const express = require('express');
-const mercadopago = require('mercadopago');
+const { MercadoPagoConfig, Payment } = require('mercadopago');
 const { PrismaClient } = require('@prisma/client');
 const { successResponse, errorResponse } = require('../utils/responses');
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-mercadopago.configure({
-  access_token: process.env.MERCADOPAGO_ACCESS_TOKEN
+const client = new MercadoPagoConfig({
+  accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN
 });
+const payment = new Payment(client);
 
 // Webhook Mercado Pago
 router.post('/mercadopago', async (req, res) => {
@@ -19,8 +20,8 @@ router.post('/mercadopago', async (req, res) => {
       const paymentId = data.id;
 
       // Buscar informações do pagamento
-      const payment = await mercadopago.payment.findById(paymentId);
-      const orderIdStr = payment.body.external_reference;
+      const paymentInfo = await payment.get({ id: paymentId });
+      const orderIdStr = paymentInfo.external_reference;
 
       if (orderIdStr) {
         const orderId = parseInt(orderIdStr);
@@ -29,7 +30,7 @@ router.post('/mercadopago', async (req, res) => {
         });
 
         if (order) {
-          const paymentStatus = payment.body.status;
+          const paymentStatus = paymentInfo.status;
           let newStatus = order.status;
 
           if (paymentStatus === 'approved') {
