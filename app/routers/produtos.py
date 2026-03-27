@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from app.database import get_db
 from app.models.product import Product
@@ -12,24 +12,28 @@ router = APIRouter(prefix="/produtos", tags=["Produtos"])
 products_router = APIRouter(prefix="/products", tags=["Products"])
 
 class ProductCreate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
     nome: str
-    descricao: str = None
+    descricao: Optional[str] = None
     preco: float
     imagens: List[str] = []
     categoria: str
     promocao: bool = False
-    preco_promocional: float = None
+    preco_promocional: Optional[float] = None
     estoque: int = 0
 
 class ProductUpdate(BaseModel):
-    nome: str = None
-    descricao: str = None
-    preco: float = None
-    imagens: List[str] = None
-    categoria: str = None
-    promocao: bool = None
-    preco_promocional: float = None
-    estoque: int = None
+    model_config = ConfigDict(from_attributes=True)
+    
+    nome: Optional[str] = None
+    descricao: Optional[str] = None
+    preco: Optional[float] = None
+    imagens: Optional[List[str]] = None
+    categoria: Optional[str] = None
+    promocao: Optional[bool] = None
+    preco_promocional: Optional[float] = None
+    estoque: Optional[int] = None
 
 @router.get("/")
 def get_produtos(
@@ -66,7 +70,7 @@ def get_produto(product_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", dependencies=[Depends(require_admin)])
 def create_produto(product_data: ProductCreate, db: Session = Depends(get_db)):
-    product = Product(**product_data.dict())
+    product = Product(**product_data.model_dump())
     db.add(product)
     db.commit()
     db.refresh(product)
@@ -78,7 +82,7 @@ def update_produto(product_id: int, product_data: ProductUpdate, db: Session = D
     if not product:
         return error_response("Produto não encontrado", 404)
     
-    for field, value in product_data.dict(exclude_unset=True).items():
+    for field, value in product_data.model_dump(exclude_unset=True).items():
         setattr(product, field, value)
     
     db.commit()
