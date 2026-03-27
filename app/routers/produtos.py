@@ -110,6 +110,14 @@ def get_products(
     products = query.offset(skip).limit(limit).all()
     return success_response(data=products, message="Produtos listados com sucesso")
 
+@products_router.get("/carousel")
+def get_carousel_products(db: Session = Depends(get_db)):
+    products = db.query(Product).filter(
+        Product.is_active == True,
+        Product.promocao == True
+    ).limit(10).all()
+    return success_response(data=products, message="Produtos do carousel")
+
 @router.delete("/{product_id}", dependencies=[Depends(require_admin)])
 def delete_produto(product_id: int, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
