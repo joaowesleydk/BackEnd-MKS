@@ -9,6 +9,7 @@ from app.auth import require_admin
 from app.utils import success_response, error_response
 
 router = APIRouter(prefix="/produtos", tags=["Produtos"])
+products_router = APIRouter(prefix="/products", tags=["Products"])
 
 class ProductCreate(BaseModel):
     nome: str
@@ -82,6 +83,32 @@ def update_produto(product_id: int, product_data: ProductUpdate, db: Session = D
     
     db.commit()
     return success_response(data=product, message="Produto atualizado com sucesso")
+
+@products_router.get("/")
+def get_products(
+    categoria: Optional[str] = None,
+    search: Optional[str] = None,
+    promocao: Optional[bool] = None,
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db)
+):
+    query = db.query(Product).filter(Product.is_active == True)
+    
+    if categoria:
+        query = query.filter(Product.categoria == categoria)
+    
+    if search:
+        query = query.filter(or_(
+            Product.nome.ilike(f"%{search}%"),
+            Product.descricao.ilike(f"%{search}%")
+        ))
+    
+    if promocao is not None:
+        query = query.filter(Product.promocao == promocao)
+    
+    products = query.offset(skip).limit(limit).all()
+    return success_response(data=products, message="Produtos listados com sucesso")
 
 @router.delete("/{product_id}", dependencies=[Depends(require_admin)])
 def delete_produto(product_id: int, db: Session = Depends(get_db)):
