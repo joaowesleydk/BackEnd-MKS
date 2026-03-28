@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from typing import List, Optional
 from app.database import get_db
 from app.models.product import Product
@@ -12,8 +12,6 @@ router = APIRouter(prefix="/produtos", tags=["Produtos"])
 products_router = APIRouter(prefix="/products", tags=["Products"])
 
 class ProductCreate(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    
     nome: str
     descricao: Optional[str] = None
     preco: float
@@ -24,8 +22,6 @@ class ProductCreate(BaseModel):
     estoque: int = 0
 
 class ProductUpdate(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    
     nome: Optional[str] = None
     descricao: Optional[str] = None
     preco: Optional[float] = None
@@ -70,7 +66,7 @@ def get_produto(product_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", dependencies=[Depends(require_admin)])
 def create_produto(product_data: ProductCreate, db: Session = Depends(get_db)):
-    product = Product(**product_data.model_dump())
+    product = Product(**product_data.dict())
     db.add(product)
     db.commit()
     db.refresh(product)
@@ -82,7 +78,7 @@ def update_produto(product_id: int, product_data: ProductUpdate, db: Session = D
     if not product:
         return error_response("Produto não encontrado", 404)
     
-    for field, value in product_data.model_dump(exclude_unset=True).items():
+    for field, value in product_data.dict(exclude_unset=True).items():
         setattr(product, field, value)
     
     db.commit()
