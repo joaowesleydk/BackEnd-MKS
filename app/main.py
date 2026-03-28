@@ -10,8 +10,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Criar tabelas
-Base.metadata.create_all(bind=engine)
+# Criar tabelas apenas se não estiver em produção
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"Warning: Could not create tables: {e}")
 
 app = FastAPI(
     title="Moda Karina Store API",
