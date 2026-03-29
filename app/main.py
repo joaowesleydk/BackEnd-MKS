@@ -55,11 +55,18 @@ def test_db():
     try:
         from app.database import SessionLocal
         db = SessionLocal()
-        db.execute("SELECT 1")
+        # Teste simples de conexão
+        result = db.execute("SELECT 1 as test")
+        test_value = result.fetchone()[0]
         db.close()
-        return {"message": "Database connection OK"}
+        return {"message": "Database connection OK", "test_result": test_value}
     except Exception as e:
-        return {"message": f"Database error: {str(e)}"}
+        import traceback
+        return {
+            "message": f"Database error: {str(e)}",
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()[-500:]  # Últimos 500 chars
+        }
 
 # Routers
 app.include_router(auth.router, prefix="/api")
