@@ -68,6 +68,28 @@ def test_db():
             "traceback": traceback.format_exc()[-500:]  # Últimos 500 chars
         }
 
+# Debug database URL (sem mostrar senha)
+@app.get("/debug-db")
+def debug_db():
+    import os
+    db_url = os.getenv("DATABASE_URL", "Not found")
+    if db_url != "Not found":
+        # Mascarar senha para segurança
+        parts = db_url.split("@")
+        if len(parts) > 1:
+            masked_url = parts[0].split(":")[:-1] + ["***"] + ["@"] + parts[1:]
+            masked_url = ":".join(masked_url[:-2]) + ":***@" + "@".join(masked_url[-1:])
+        else:
+            masked_url = db_url
+    else:
+        masked_url = "Not found"
+    
+    return {
+        "database_url_masked": masked_url,
+        "has_sslmode": "sslmode" in db_url if db_url != "Not found" else False,
+        "has_render_domain": "render.com" in db_url if db_url != "Not found" else False
+    }
+
 # Routers
 app.include_router(auth.router, prefix="/api")
 app.include_router(produtos.router, prefix="/api")
