@@ -49,6 +49,18 @@ async def global_exception_handler(request, exc):
 def health_check():
     return {"message": "Moda Karina Store API is running!", "version": "1.0.0"}
 
+# Test database connection
+@app.get("/test-db")
+def test_db():
+    try:
+        from app.database import SessionLocal
+        db = SessionLocal()
+        db.execute("SELECT 1")
+        db.close()
+        return {"message": "Database connection OK"}
+    except Exception as e:
+        return {"message": f"Database error: {str(e)}"}
+
 # Routers
 app.include_router(auth.router, prefix="/api")
 app.include_router(produtos.router, prefix="/api")
