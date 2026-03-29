@@ -27,6 +27,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://karinamodastore.com.br",
+        "https://www.modakarinastore.com.br",
+        "https://modakarinastore.com.br",
         "http://localhost:5173",
         "http://localhost:3000"
     ],
